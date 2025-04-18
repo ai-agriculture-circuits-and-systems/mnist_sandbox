@@ -1,38 +1,93 @@
-# Introduction
+# MNIST Classification with PyTorch
 
-![MNIST Examples](https://upload.wikimedia.org/wikipedia/commons/2/27/MnistExamples.png)
+This project implements a comprehensive deep learning framework for training and evaluating various neural network architectures on the MNIST dataset. The framework is designed to be modular and extensible, supporting a wide range of modern deep learning models.
 
-This project implements a neural network model to classify handwritten digits using the MNIST (Modified National Institute of Standards and Technology) dataset. The MNIST dataset is a large collection of handwritten digits that is commonly used for training various image processing systems and for testing machine learning algorithms. It contains 70,000 images of handwritten digits (60,000 for training and 10,000 for testing), where each image is 28x28 pixels in grayscale.
+## Project Structure
 
-# Requirements
-
-Ensure you have Python 3.7 or later installed on your machine. The following packages are required, and you can install them using pip with the provided command: `pip3 install -U -r requirements.txt`.
-
-- `numpy`: A fundamental package for scientific computing in Python.
-- `torch`: [PyTorch](https://pytorch.org/), an open-source machine learning library for Python.
-- `torchvision`: A PyTorch package that includes datasets and model architectures for computer vision.
-- `opencv-python`: An open-source computer vision and machine learning software library.
-
-# Run
-
-To start training on the MNIST digits dataset, execute `train.py` from your Python environment. The training and test data are located in the `data/` folder and were initially curated by Yann LeCun (http://yann.lecun.com/exdb/mnist/).
-
-```python
-# Example snippet of train.py to showcase its usage.
-# This will set up the environment for training a model on MNIST dataset.
-
-# Import necessary libraries (Make sure they are installed as per requirements)
-import torch
-
-# Your training script will start here, initialize models, load data, etc.
-# ...
-
-# Start the training process
-# ...
-
-# Save your trained model
-torch.save(model.state_dict(), "path_to_save_model.pt")
-
-# Add suitable comments to each segment of your code for better understanding.
+```
+.
+├── data/                  # MNIST dataset files
+├── models/               # Model implementations
+│   ├── architectures/   # Various model architectures
+│   ├── base_model.py    # Base model class
+│   ├── model_factory.py # Model factory for easy instantiation
+│   └── logger.py        # Logging utilities
+├── utils/               # Utility classes
+│   ├── data_loader.py   # Data loading utilities
+│   ├── trainer.py       # Training utilities
+│   └── evaluator.py     # Evaluation utilities
+├── main.py              # Main script
+├── requirements.txt     # Project dependencies
+└── README.md           # This file
 ```
 
+## Supported Models
+
+The framework currently supports the following architectures:
+
+### Classification Models
+- **Simple CNN**: Basic convolutional neural network
+- **AlexNet**: Classic CNN architecture
+- **VGG**: Very Deep Convolutional Networks
+- **ResNet**: Residual Networks
+- **DenseNet**: Densely Connected Convolutional Networks
+- **MobileNet**: Lightweight CNN for mobile devices
+- **EfficientNet**: Efficient and accurate scaling
+- **SqueezeNet**: Lightweight CNN architecture
+- **Xception**: Extreme Inception
+- **Vision Transformer (ViT)**: Transformer-based vision model
+- **MLP**: Multi-Layer Perceptron
+
+### Generative Models
+- **Autoencoder**: For unsupervised learning and dimensionality reduction
+- **GAN**: Generative Adversarial Network
+
+### Language Models
+- **BERT**: Bidirectional Encoder Representations from Transformers
+- **GPT**: Generative Pre-trained Transformer
+- **RNN**: Recurrent Neural Network
+
+## Setup
+
+1. Install the required dependencies:
+```bash
+pip download --no-cache-dir -r requirements.txt -d wheels
+pip install --no-index --find-links=wheels -r requirements.txt
+```
+
+2. Place your MNIST dataset files in the `data/` directory:
+   - `MNISTtrain.mat`
+   - `MNISTtest.mat`
+
+## Usage
+
+Run the training script:
+```bash
+python main.py
+```
+
+The script will:
+1. Load and preprocess the MNIST dataset
+2. Train the selected model for the specified number of epochs
+3. Save the best model checkpoint to `outputs/best_model.pth`
+4. Generate evaluation metrics and visualizations in the `outputs/` directory
+
+## Adding New Models
+
+To add a new model:
+
+1. Create a new file in the `models/architectures/` directory
+2. Implement your model class inheriting from `BaseModel`
+3. Register your model in `models/model_factory.py`
+4. Import and use your model through the model factory
+
+## Features
+
+- Modular architecture for easy extension
+- Model factory pattern for flexible model instantiation
+- Separate classes for training and evaluation
+- Progress bars for training and evaluation
+- Automatic model checkpointing
+- Comprehensive evaluation metrics and visualizations
+- GPU support when available
+- Extensive logging and monitoring capabilities
