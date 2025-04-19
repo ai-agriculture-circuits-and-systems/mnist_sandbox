@@ -6,8 +6,8 @@ This project implements a comprehensive deep learning framework for training and
 
 ```
 .
-├── data/                  # MNIST dataset files
-├── models/               # Model implementations
+├── data/                # MNIST dataset files
+├── models/              # Model implementations
 │   ├── architectures/   # Various model architectures
 │   ├── base_model.py    # Base model class
 │   ├── model_factory.py # Model factory for easy instantiation
@@ -46,6 +46,27 @@ The framework currently supports the following architectures:
 - **BERT**: Bidirectional Encoder Representations from Transformers
 - **GPT**: Generative Pre-trained Transformer
 - **RNN**: Recurrent Neural Network
+
+## Model Specifications
+
+| Model | Input Size | Parameters | Key Features |
+|-------|------------|------------|--------------|
+| Simple CNN | 28x28 | ~100K | Basic convolutional architecture with 3 conv layers |
+| AlexNet | 224x224 | ~60M | Classic CNN with 5 conv layers and 3 FC layers |
+| VGG | 224x224 | ~138M | Very deep architecture with small 3x3 filters |
+| ResNet | 224x224 | ~23M | Residual blocks with skip connections |
+| DenseNet | 224x224 | ~8M | Dense connectivity between layers |
+| MobileNet | 224x224 | ~4.2M | Depthwise separable convolutions |
+| EfficientNet | 224x224 | ~5.3M | Compound scaling of width, depth, and resolution |
+| SqueezeNet | 224x224 | ~1.2M | Fire modules with 1x1 convolutions |
+| Xception | 224x224 | ~22.8M | Depthwise separable convolutions with residual connections |
+| Vision Transformer (ViT) | 224x224 | ~86M | Transformer-based architecture with patch embedding |
+| MLP | 28x28 | ~1M | Simple fully connected architecture |
+| Autoencoder | 28x28 | ~500K | Encoder-decoder architecture for feature learning |
+| GAN | 28x28 | ~2M | Generator and discriminator for adversarial training |
+| BERT | 224x224 | ~110M | Transformer-based architecture with self-attention |
+| GPT | 224x224 | ~117M | Autoregressive transformer architecture |
+| RNN (LSTM/GRU) | 28x28 | ~1.5M | Recurrent architecture for sequential processing |
 
 ## Setup
 

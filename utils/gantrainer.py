@@ -34,12 +34,16 @@ class GANTrainer:
             if len(real_images.shape) == 2:  # If flattened [batch_size, 784]
                 real_images = real_images.view(batch_size, 1, 28, 28)
             d_real = self.model.discriminator(real_images)
+            # Reshape discriminator output to match target shape
+            d_real = d_real.view(batch_size, 1)
             d_real_loss = self.criterion(d_real, real_labels)
             
             # Fake images
             z = torch.randn(batch_size, self.model.latent_dim, 1, 1).to(self.device)
             fake_images = self.model.generator(z)
             d_fake = self.model.discriminator(fake_images.detach())
+            # Reshape discriminator output to match target shape
+            d_fake = d_fake.view(batch_size, 1)
             d_fake_loss = self.criterion(d_fake, fake_labels)
             
             # Total discriminator loss
@@ -53,6 +57,8 @@ class GANTrainer:
             # Generate fake images
             fake_images = self.model.generator(z)
             g_output = self.model.discriminator(fake_images)
+            # Reshape discriminator output to match target shape
+            g_output = g_output.view(batch_size, 1)
             g_loss = self.criterion(g_output, real_labels)  # Generator wants to fool discriminator
             
             g_loss.backward()

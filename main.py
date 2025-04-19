@@ -206,7 +206,7 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     
     # Set appropriate image size based on model type
-    if args.model in ['mlp', 'simple_cnn', 'simple_ae', 'conv_ae', 'vae', 'denoising_ae', 'vanilla_gan', 'dcgan', 'wgan', 'cgan', 'bert', 'gpt']:
+    if args.model in ['simple_ae', 'conv_ae', 'vae', 'denoising_ae', 'vanilla_gan', 'dcgan', 'wgan', 'cgan', 'bert', 'gpt']:
         args.image_size = 28  # Use original MNIST size for these models
     else:
         args.image_size = 224  # Default size for CNN models

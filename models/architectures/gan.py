@@ -76,25 +76,29 @@ class DCGAN(GANBase):
             # Final state size: 1 x 28 x 28
         )
         
-        # Discriminator - Redesigned for MNIST
+        # Discriminator - Completely redesigned for MNIST
         self.discriminator = nn.Sequential(
             # Input is 1 x 28 x 28
             nn.Conv2d(1, discriminator_channels, 3, 1, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
             # State size: discriminator_channels x 28 x 28
-            nn.Conv2d(discriminator_channels, discriminator_channels * 2, 4, 2, 1, bias=False),
+            
+            nn.Conv2d(discriminator_channels, discriminator_channels * 2, 3, 2, 1, bias=False),
             nn.BatchNorm2d(discriminator_channels * 2),
             nn.LeakyReLU(0.2, inplace=True),
             # State size: (discriminator_channels * 2) x 14 x 14
-            nn.Conv2d(discriminator_channels * 2, discriminator_channels * 4, 4, 2, 1, bias=False),
+            
+            nn.Conv2d(discriminator_channels * 2, discriminator_channels * 4, 3, 2, 1, bias=False),
             nn.BatchNorm2d(discriminator_channels * 4),
             nn.LeakyReLU(0.2, inplace=True),
             # State size: (discriminator_channels * 4) x 7 x 7
-            nn.Conv2d(discriminator_channels * 4, discriminator_channels * 8, 4, 2, 1, bias=False),
+            
+            nn.Conv2d(discriminator_channels * 4, discriminator_channels * 8, 3, 2, 1, bias=False),
             nn.BatchNorm2d(discriminator_channels * 8),
             nn.LeakyReLU(0.2, inplace=True),
             # State size: (discriminator_channels * 8) x 4 x 4
-            nn.Conv2d(discriminator_channels * 8, 1, 4, 1, 0, bias=False),
+            
+            nn.Conv2d(discriminator_channels * 8, 1, 3, 1, 0, bias=False),
             nn.Sigmoid()
         )
     

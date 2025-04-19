@@ -3,23 +3,28 @@ import torch.nn.functional as F
 from ..base_model import BaseModel
 
 class MLP(BaseModel):
-    def __init__(self, num_classes=10, hidden_sizes=[512, 256, 128]):
+    def __init__(self, num_classes=10, hidden_sizes=[2048, 1024, 512, 256], input_size=224):
         super(MLP, self).__init__()
         
         # Flatten the input
         self.flatten = nn.Flatten()
         
-        # Calculate input size (28x28 = 784 for MNIST)
-        input_size = 28 * 28
+        # Calculate input size
+        self.input_size = input_size * input_size
         
         # Create layers
         layers = []
-        prev_size = input_size
+        prev_size = self.input_size
         
-        for hidden_size in hidden_sizes:
+        for i, hidden_size in enumerate(hidden_sizes):
+            # Linear layer
             layers.append(nn.Linear(prev_size, hidden_size))
-            layers.append(nn.ReLU())
-            layers.append(nn.Dropout(0.2))
+            # Batch normalization
+            layers.append(nn.BatchNorm1d(hidden_size))
+            # ReLU activation
+            layers.append(nn.ReLU(inplace=True))
+            # Dropout
+            layers.append(nn.Dropout(0.3))
             prev_size = hidden_size
         
         # Output layer
@@ -29,6 +34,10 @@ class MLP(BaseModel):
         self.layers = nn.Sequential(*layers)
         
     def forward(self, x):
+        # Flatten input
         x = self.flatten(x)
+        
+        # Apply layers
         x = self.layers(x)
+        
         return x 
