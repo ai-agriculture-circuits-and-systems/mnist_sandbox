@@ -1,3 +1,9 @@
 [submodule "data/Strawberry"]
 	path = data/Strawberry
 	url = git@github.com:ai-agriculture-circuits-and-systems/Strawberry.git
+[submodule "data/Plant_Village_Raspberry"]
+	path = data/Plant_Village_Raspberry
+	url = git@github.com:ai-agriculture-circuits-and-systems/Plant_Village_Raspberry.git
+[submodule "data/Plant_Village_Orange"]
+	path = data/Plant_Village_Orange
+	url = git@github.com:ai-agriculture-circuits-and-systems/Plant_Village_Orange.git
