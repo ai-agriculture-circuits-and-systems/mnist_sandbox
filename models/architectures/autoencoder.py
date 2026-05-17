@@ -1,6 +1,17 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from typing import List
+
 from ..base_model import BaseModel
+
+
+def _spatial_size_after_convs(input_size: int, num_layers: int) -> int:
+    """Spatial H/W after ``num_layers`` of Conv2d(k=3, s=2, p=1)."""
+    size = input_size
+    for _ in range(num_layers):
+        size = (size + 2 - 3) // 2 + 1
+    return size
 
 class AutoencoderBase(BaseModel):
     """Base class for autoencoder models"""
@@ -71,28 +82,27 @@ class SimpleAutoencoder(AutoencoderBase):
 
 class ConvolutionalAutoencoder(AutoencoderBase):
     """Convolutional autoencoder"""
-    def __init__(self, num_classes=10, latent_dim=32, channels=[32, 64, 128]):
+    def __init__(self, num_classes=10, latent_dim=32, channels=None, input_size=28):
         super(ConvolutionalAutoencoder, self).__init__(num_classes=num_classes, latent_dim=latent_dim)
-        
+        channels = channels or [32, 64, 128]
+        self.input_size = input_size
+
         # Encoder
         encoder_layers = []
         in_channels = 1  # MNIST is grayscale
-        
-        # Calculate feature map sizes based on input size
-        self.feature_sizes = []
-        current_size = 224  # Handle any input size
-        
+
+        num_layers = len(channels)
+        final_spatial = _spatial_size_after_convs(input_size, num_layers)
+        self.feature_sizes = [final_spatial]
+
         for out_channels in channels:
             encoder_layers.extend([
                 nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1),
                 nn.ReLU()
             ])
-            current_size = current_size // 2
-            self.feature_sizes.append(current_size)
             in_channels = out_channels
-        
-        # Calculate the size of the flattened feature map
-        self.flatten_size = channels[-1] * self.feature_sizes[-1] * self.feature_sizes[-1]
+
+        self.flatten_size = channels[-1] * final_spatial * final_spatial
         
         # Add flatten and linear layer for latent space
         encoder_layers.extend([
@@ -132,23 +142,32 @@ class ConvolutionalAutoencoder(AutoencoderBase):
     def decode(self, z):
         return self.decoder(z)
     
+    def _resize_output(self, out: torch.Tensor) -> torch.Tensor:
+        if out.shape[-2:] != (self.input_size, self.input_size):
+            out = F.interpolate(
+                out,
+                size=(self.input_size, self.input_size),
+                mode="bilinear",
+                align_corners=False,
+            )
+        return out
+
     def forward(self, x):
         z = self.encode(x)
-        return self.decode(z)
+        return self._resize_output(self.decode(z))
 
 class VariationalAutoencoder(AutoencoderBase):
     """Variational Autoencoder (VAE)"""
-    def __init__(self, num_classes=10, latent_dim=32, hidden_dims=[128, 64]):
+    def __init__(self, num_classes=10, latent_dim=32, hidden_dims=None, input_size=28):
         super(VariationalAutoencoder, self).__init__(num_classes=num_classes, latent_dim=latent_dim)
-        
-        # Calculate input dimension based on image size
-        self.input_dim = 1  # Start with number of channels
-        
+        hidden_dims = hidden_dims or [128, 64]
+        self.hidden_dims = hidden_dims
+        self.input_size = input_size
+
         # Encoder
         encoder_layers = []
         in_channels = 1
-        
-        # Use convolutional layers instead of linear
+
         for hidden_dim in hidden_dims:
             encoder_layers.extend([
                 nn.Conv2d(in_channels, hidden_dim, kernel_size=3, stride=2, padding=1),
@@ -156,37 +175,33 @@ class VariationalAutoencoder(AutoencoderBase):
                 nn.ReLU()
             ])
             in_channels = hidden_dim
-        
+
         self.encoder = nn.Sequential(*encoder_layers)
-        
-        # Calculate size of flattened features
-        self.flatten_size = hidden_dims[-1] * (224 // (2 ** len(hidden_dims))) ** 2
-        
+
+        self.feature_size = _spatial_size_after_convs(input_size, len(hidden_dims))
+        self.flatten_size = hidden_dims[-1] * self.feature_size * self.feature_size
+
         # Latent space parameters
         self.fc_mu = nn.Linear(self.flatten_size, latent_dim)
         self.fc_var = nn.Linear(self.flatten_size, latent_dim)
-        
+
         # Decoder
         decoder_layers = []
-        
-        # Initial linear layer to get back to convolutional shape
+
         self.decoder_input = nn.Linear(latent_dim, self.flatten_size)
-        
-        # Use transposed convolutions for upsampling
-        in_channels = hidden_dims[-1]
+
         for i in range(len(hidden_dims) - 1, 0, -1):
             decoder_layers.extend([
                 nn.ConvTranspose2d(hidden_dims[i], hidden_dims[i-1], kernel_size=3, stride=2, padding=1, output_padding=1),
                 nn.BatchNorm2d(hidden_dims[i-1]),
                 nn.ReLU()
             ])
-        
-        # Final layer
+
         decoder_layers.extend([
             nn.ConvTranspose2d(hidden_dims[0], 1, kernel_size=3, stride=2, padding=1, output_padding=1),
             nn.Sigmoid()
         ])
-        
+
         self.decoder = nn.Sequential(*decoder_layers)
     
     def encode(self, x):
@@ -210,19 +225,29 @@ class VariationalAutoencoder(AutoencoderBase):
     def forward(self, x):
         mu, logvar = self.encode(x)
         z = self.reparameterize(mu, logvar)
-        return self.decode(z), mu, logvar
+        recon = self.decode(z)
+        if recon.shape[-2:] != (self.input_size, self.input_size):
+            recon = F.interpolate(
+                recon,
+                size=(self.input_size, self.input_size),
+                mode="bilinear",
+                align_corners=False,
+            )
+        return recon, mu, logvar
 
 class DenoisingAutoencoder(AutoencoderBase):
     """Denoising Autoencoder"""
-    def __init__(self, num_classes=10, latent_dim=32, hidden_dims=[128, 64], noise_factor=0.3):
+    def __init__(self, num_classes=10, latent_dim=32, hidden_dims=None, noise_factor=0.3, input_size=28):
         super(DenoisingAutoencoder, self).__init__(num_classes=num_classes, latent_dim=latent_dim)
+        hidden_dims = hidden_dims or [128, 64]
+        self.hidden_dims = hidden_dims
         self.noise_factor = noise_factor
-        
-        # Use convolutional layers instead of linear
+        self.input_size = input_size
+
         # Encoder
         encoder_layers = []
         in_channels = 1
-        
+
         for hidden_dim in hidden_dims:
             encoder_layers.extend([
                 nn.Conv2d(in_channels, hidden_dim, kernel_size=3, stride=2, padding=1),
@@ -230,9 +255,8 @@ class DenoisingAutoencoder(AutoencoderBase):
                 nn.ReLU()
             ])
             in_channels = hidden_dim
-        
-        # Calculate feature map size
-        self.feature_size = 224 // (2 ** len(hidden_dims))
+
+        self.feature_size = _spatial_size_after_convs(input_size, len(hidden_dims))
         self.flatten_size = hidden_dims[-1] * self.feature_size * self.feature_size
         
         encoder_layers.extend([
@@ -279,4 +303,12 @@ class DenoisingAutoencoder(AutoencoderBase):
     def forward(self, x):
         noisy_x = self.add_noise(x)
         z = self.encode(noisy_x)
-        return self.decode(z) 
+        out = self.decode(z)
+        if out.shape[-2:] != (self.input_size, self.input_size):
+            out = F.interpolate(
+                out,
+                size=(self.input_size, self.input_size),
+                mode="bilinear",
+                align_corners=False,
+            )
+        return out 

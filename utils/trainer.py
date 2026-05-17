@@ -3,13 +3,24 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 from models.architectures.gan import CGAN
+from utils.training_factory import get_classification_loss, get_optimizer
 
 class Trainer:
-    def __init__(self, model, device, learning_rate=0.001):
+    def __init__(
+        self,
+        model,
+        device,
+        learning_rate=0.001,
+        loss_name="cross_entropy",
+        optimizer_name="adam",
+        weight_decay=0.0,
+    ):
         self.model = model
         self.device = device
-        self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        self.criterion = get_classification_loss(loss_name)
+        self.optimizer = get_optimizer(
+            optimizer_name, model.parameters(), learning_rate, weight_decay
+        )
         
     def train_epoch(self, train_loader):
         self.model.train()

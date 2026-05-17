@@ -102,7 +102,7 @@ show_help() {
     echo -e "${BLUE}Options:${NC}"
     echo "  -h, --help                 Show this help message"
     echo "  -m, --model MODEL          Model architecture to use (default: alexnet)"
-    echo "                             Available models: alexnet, simple_cnn, vgg, resnet, densenet, mobilenet, mlp, vit, xception, efficientnet, squeezenet, simple_ae, conv_ae, vae, denoising_ae, bert, gpt, lstm, gru, vanilla_gan, dcgan, wgan, cgan"
+    echo "                             Available models: run 'python -c \"from models.model_factory import ModelFactory; print(\\\" \\\".join(ModelFactory.get_available_models()))\"'"
     echo "  -b, --batch-size SIZE      Batch size for training (default: 32)"
     echo "  -e, --epochs EPOCHS         Number of epochs to train (default: 10)"
     echo "  -l, --lr RATE             Learning rate (default: 0.001)"

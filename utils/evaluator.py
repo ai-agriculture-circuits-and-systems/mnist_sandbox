@@ -7,10 +7,12 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 class Evaluator:
-    def __init__(self, model, device):
+    def __init__(self, model, device, loss_name="cross_entropy"):
         self.model = model
         self.device = device
-        self.criterion = nn.CrossEntropyLoss()
+        from utils.training_factory import get_classification_loss
+
+        self.criterion = get_classification_loss(loss_name)
         
     def evaluate(self, test_loader):
         self.model.eval()

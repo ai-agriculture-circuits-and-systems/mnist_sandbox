@@ -3,32 +3,10 @@
 # Create or clear the log file
 echo "Starting test run at $(date)" > test.log
 
-# Array of all available models from model_factory.py
-models=(
-    "mlp"
-    "alexnet"
-    "simple_cnn"
-    "vgg"
-    "resnet"
-    "densenet"
-    "mobilenet"
-    "bert"
-    "gpt"
-    "lstm"
-    "gru"
-    "vanilla_gan"
-    "dcgan"
-    "wgan"
-    "cgan"
-    "simple_ae"
-    "conv_ae"
-    "vae"
-    "denoising_ae"
-    "squeezenet"
-    "efficientnet"
-    "xception"
-    "vit"
-)
+# All models from model_factory (single source of truth)
+mapfile -t models < <(python -c "from models.model_factory import ModelFactory; print('\n'.join(ModelFactory.get_available_models()))")
+
+echo "Testing ${#models[@]} models..." | tee -a test.log
 
 # Loop through each model and run it
 for model in "${models[@]}"; do
@@ -39,4 +17,3 @@ for model in "${models[@]}"; do
 done
 
 echo "Test run completed at $(date)" | tee -a test.log
-

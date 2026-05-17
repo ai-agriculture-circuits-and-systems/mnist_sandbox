@@ -8,6 +8,7 @@ from utils.evaluator import Evaluator
 from utils.gantrainer import GANTrainer
 from utils.wgantrainer import WGANtrainer
 from utils.cgantrainer import CGANTrainer
+from utils.early_stopping import EarlyStopping
 
 def parse_args():
     parser = argparse.ArgumentParser(description='MNIST Classification with PyTorch')
@@ -36,6 +37,16 @@ def parse_args():
                         help='Number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.001,
                         help='Learning rate (default: 0.001)')
+    parser.add_argument('--loss', type=str, default='cross_entropy',
+                        help='Loss function for classifiers (default: cross_entropy)')
+    parser.add_argument('--optimizer', type=str, default='adam',
+                        help='Optimizer name: adam, sgd, adamw, rmsprop (default: adam)')
+    parser.add_argument('--weight-decay', type=float, default=0.0,
+                        help='Weight decay for optimizer (default: 0.0)')
+    parser.add_argument('--patience', type=int, default=0,
+                        help='Early-stop patience (0=disabled, default: 0)')
+    parser.add_argument('--min-delta', type=float, default=0.1,
+                        help='Min metric improvement for early stopping (default: 0.1)')
     parser.add_argument('--device', type=str, default='auto',
                         choices=['auto', 'cuda', 'cpu'],
                         help='Device to use for training (default: auto)')
@@ -106,6 +117,60 @@ def parse_args():
     parser.add_argument('--squeezenet-version', type=float, default=1.1,
                         choices=[1.0, 1.1],
                         help='SqueezeNet version (default: 1.1)')
+
+    # LeNet parameters
+    parser.add_argument('--lenet-dropout', type=float, default=0.5,
+                        help='LeNet dropout rate (default: 0.5)')
+
+    # NiN parameters
+    parser.add_argument('--nin-channels', type=str, default='96,256,384',
+                        help='NiN channel configuration (default: 96,256,384)')
+    parser.add_argument('--nin-dropout', type=float, default=0.5,
+                        help='NiN dropout rate (default: 0.5)')
+
+    # GoogLeNet parameters
+    parser.add_argument('--googlenet-dropout', type=float, default=0.4,
+                        help='GoogLeNet dropout rate (default: 0.4)')
+
+    # ShuffleNet parameters
+    parser.add_argument('--shufflenet-stages', type=str, default='4,8,4',
+                        help='ShuffleNet units per stage (default: 4,8,4)')
+    parser.add_argument('--shufflenet-base-channels', type=int, default=24,
+                        help='ShuffleNet base channels (default: 24)')
+
+    # SE-ResNet parameters
+    parser.add_argument('--se-resnet-blocks', type=str, default='2,2,2,2',
+                        help='SE-ResNet block configuration (default: 2,2,2,2)')
+    parser.add_argument('--se-resnet-reduction', type=int, default=16,
+                        help='SE block reduction ratio (default: 16)')
+
+    # WideResNet parameters
+    parser.add_argument('--wide-resnet-depth', type=int, default=28,
+                        help='WideResNet depth (default: 28)')
+    parser.add_argument('--wide-resnet-widen-factor', type=int, default=10,
+                        help='WideResNet widen factor (default: 10)')
+    parser.add_argument('--wide-resnet-dropout', type=float, default=0.3,
+                        help='WideResNet dropout (default: 0.3)')
+
+    # ConvNeXt parameters
+    parser.add_argument('--convnext-depths', type=str, default='2,2,4,2',
+                        help='ConvNeXt depths per stage (default: 2,2,4,2)')
+    parser.add_argument('--convnext-dims', type=str, default='48,96,192,384',
+                        help='ConvNeXt channel dims (default: 48,96,192,384)')
+
+    # RepVGG parameters
+    parser.add_argument('--repvgg-width-mult', type=float, default=1.0,
+                        help='RepVGG width multiplier (default: 1.0)')
+
+    # RegNet parameters
+    parser.add_argument('--regnet-widths', type=str, default='32,64,128,256',
+                        help='RegNet stage widths (default: 32,64,128,256)')
+    parser.add_argument('--regnet-depths', type=str, default='1,2,6,2',
+                        help='RegNet stage depths (default: 1,2,6,2)')
+
+    # GhostNet parameters
+    parser.add_argument('--ghostnet-width-mult', type=float, default=1.0,
+                        help='GhostNet width multiplier (default: 1.0)')
     
     # BERT model parameters
     parser.add_argument('--bert-hidden-size', type=int, default=256,
@@ -270,6 +335,33 @@ def main():
         model_kwargs['reduction'] = args.efficientnet_reduction
     elif args.model == 'squeezenet':
         model_kwargs['version'] = args.squeezenet_version
+    elif args.model == 'lenet':
+        model_kwargs['dropout'] = args.lenet_dropout
+    elif args.model == 'nin':
+        model_kwargs['channels'] = [int(x) for x in args.nin_channels.split(',')]
+        model_kwargs['dropout'] = args.nin_dropout
+    elif args.model == 'googlenet':
+        model_kwargs['dropout'] = args.googlenet_dropout
+    elif args.model == 'shufflenet':
+        model_kwargs['stages'] = [int(x) for x in args.shufflenet_stages.split(',')]
+        model_kwargs['base_channels'] = args.shufflenet_base_channels
+    elif args.model == 'se_resnet':
+        model_kwargs['num_blocks'] = [int(x) for x in args.se_resnet_blocks.split(',')]
+        model_kwargs['reduction'] = args.se_resnet_reduction
+    elif args.model == 'wide_resnet':
+        model_kwargs['depth'] = args.wide_resnet_depth
+        model_kwargs['widen_factor'] = args.wide_resnet_widen_factor
+        model_kwargs['dropout'] = args.wide_resnet_dropout
+    elif args.model == 'convnext':
+        model_kwargs['depths'] = [int(x) for x in args.convnext_depths.split(',')]
+        model_kwargs['dims'] = [int(x) for x in args.convnext_dims.split(',')]
+    elif args.model == 'repvgg':
+        model_kwargs['width_mult'] = args.repvgg_width_mult
+    elif args.model == 'regnet':
+        model_kwargs['widths'] = [int(x) for x in args.regnet_widths.split(',')]
+        model_kwargs['depths'] = [int(x) for x in args.regnet_depths.split(',')]
+    elif args.model == 'ghostnet':
+        model_kwargs['width_mult'] = args.ghostnet_width_mult
     elif args.model == 'bert':
         model_kwargs = {
             'hidden_size': args.bert_hidden_size,
@@ -315,17 +407,20 @@ def main():
     elif args.model == 'conv_ae':
         model_kwargs = {
             'latent_dim': args.conv_ae_latent_dim,
-            'channels': [int(x) for x in args.conv_ae_channels.split(',')]
+            'channels': [int(x) for x in args.conv_ae_channels.split(',')],
+            'input_size': args.image_size,
         }
     elif args.model == 'vae':
         model_kwargs = {
             'latent_dim': args.vae_latent_dim,
-            'hidden_dims': [int(x) for x in args.vae_hidden_dims.split(',')]
+            'hidden_dims': [int(x) for x in args.vae_hidden_dims.split(',')],
+            'input_size': args.image_size,
         }
     elif args.model == 'denoising_ae':
         model_kwargs = {
             'noise_factor': args.denoising_ae_noise_factor,
-            'hidden_dims': [int(x) for x in args.denoising_ae_hidden_dims.split(',')]
+            'hidden_dims': [int(x) for x in args.denoising_ae_hidden_dims.split(',')],
+            'input_size': args.image_size,
         }
     
     # Initialize model
@@ -351,8 +446,15 @@ def main():
         trainer = CGANTrainer(model, device, learning_rate=args.lr)
         evaluator = None  # GANs don't use standard evaluation
     else:
-        trainer = Trainer(model, device, learning_rate=args.lr)
-        evaluator = Evaluator(model, device)
+        trainer = Trainer(
+            model,
+            device,
+            learning_rate=args.lr,
+            loss_name=args.loss,
+            optimizer_name=args.optimizer,
+            weight_decay=args.weight_decay,
+        )
+        evaluator = Evaluator(model, device, loss_name=args.loss)
     
     # Get file paths with class names
     model_checkpoint_path = ModelFactory.get_model_file_paths(args.model, args.output_dir, "pth")
@@ -361,7 +463,12 @@ def main():
     # Training loop
     num_epochs = args.epochs
     best_acc = 0.0
-    
+    early_stopper = None
+    if args.patience > 0 and args.model not in ['vanilla_gan', 'dcgan', 'wgan', 'cgan']:
+        early_stopper = EarlyStopping(
+            patience=args.patience, min_delta=args.min_delta, mode="max"
+        )
+
     for epoch in range(num_epochs):
         print(f"\nEpoch {epoch+1}/{num_epochs}")
         
@@ -387,7 +494,14 @@ def main():
             if evaluator is not None:
                 test_loss, test_acc, all_preds, all_targets = evaluator.evaluate(test_loader)
                 print(f"Test Loss: {test_loss:.4f}, Accuracy: {test_acc:.2f}%")
-                
+
+                if early_stopper and early_stopper.step(test_acc, epoch + 1):
+                    print(
+                        f"Early stopping at epoch {epoch + 1} "
+                        f"(no improvement for {args.patience} epochs)"
+                    )
+                    break
+
                 # Save best model
                 if test_acc > best_acc and args.save_model:
                     best_acc = test_acc

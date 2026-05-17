@@ -3,16 +3,30 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 
+from utils.training_factory import get_optimizer
+
+
 class WGANtrainer:
-    def __init__(self, model, device, learning_rate=0.00005, n_critic=5, clip_value=0.01):
+    def __init__(
+        self,
+        model,
+        device,
+        learning_rate=0.00005,
+        n_critic=5,
+        clip_value=0.01,
+        optimizer_name="rmsprop",
+    ):
         self.model = model
         self.device = device
-        self.n_critic = n_critic  # Number of D updates per G update
+        self.n_critic = n_critic
         self.clip_value = clip_value
-        
-        # Separate optimizers for generator and discriminator
-        self.g_optimizer = optim.RMSprop(model.generator.parameters(), lr=learning_rate)
-        self.d_optimizer = optim.RMSprop(model.discriminator.parameters(), lr=learning_rate)
+
+        self.g_optimizer = get_optimizer(
+            optimizer_name, model.generator.parameters(), learning_rate
+        )
+        self.d_optimizer = get_optimizer(
+            optimizer_name, model.discriminator.parameters(), learning_rate
+        )
         
     def train_epoch(self, train_loader):
         self.model.train()

@@ -3,14 +3,20 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 
+from utils.training_factory import get_optimizer
+
+
 class CGANTrainer:
-    def __init__(self, model, device, learning_rate=0.0002, beta1=0.5):
+    def __init__(self, model, device, learning_rate=0.0002, beta1=0.5, optimizer_name="adam"):
         self.model = model
         self.device = device
-        
-        # Separate optimizers for generator and discriminator
-        self.g_optimizer = optim.Adam(model.generator.parameters(), lr=learning_rate, betas=(beta1, 0.999))
-        self.d_optimizer = optim.Adam(model.discriminator.parameters(), lr=learning_rate, betas=(beta1, 0.999))
+
+        self.g_optimizer = get_optimizer(
+            optimizer_name, model.generator.parameters(), learning_rate
+        )
+        self.d_optimizer = get_optimizer(
+            optimizer_name, model.discriminator.parameters(), learning_rate
+        )
         
         # Loss function
         self.criterion = nn.BCELoss()
