@@ -15,7 +15,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo "====================================================="
-echo -e "${GREEN}MNIST Regression Suite (NAS-style)${NC}"
+echo -e "${GREEN}Model Regression Suite (NAS-style)${NC}"
 echo "====================================================="
 
 mkdir -p outputs/regression
@@ -35,6 +35,8 @@ MODELS=""
 SEED=42
 WORKERS=8
 PARALLEL=false
+DATASET="mnist"
+DATA_ROOT=""
 
 show_help() {
     echo -e "${BLUE}Usage:${NC} $0 [options]"
@@ -47,7 +49,9 @@ show_help() {
     echo -e "${BLUE}Options:${NC}"
     echo "  -h, --help              Show this help"
     echo "  -q, --quick-test        Use 100-image subset (default: on)"
-    echo "  -f, --full              Full MNIST dataset (disables quick-test)"
+    echo "  -f, --full              Full dataset (disables quick-test)"
+    echo "  --dataset NAME          mnist | strawberry | plant_village_raspberry | plant_village_orange"
+    echo "  --data-root DIR         Override dataset root (see utils/dataset_config.py)"
     echo "  -e, --max-epochs N      Max epochs per trial (default: 200)"
     echo "  -p, --patience N        Early-stop patience (default: 5)"
     echo "  -d, --min-delta X       Min improvement to reset patience (default: 0.1)"
@@ -63,8 +67,10 @@ show_help() {
     echo "  -j 1                    Sequential (disable parallelism)"
     echo ""
     echo -e "${BLUE}Examples:${NC}"
-    echo "  $0 --quick-test                    # fast smoke regression"
-    echo "  $0 --full --max-epochs 50          # full dataset, longer runs"
+    echo "  $0 --quick-test                                    # MNIST smoke test"
+    echo "  $0 --dataset strawberry -q -m resnet,simple_cnn    # strawberry quick run"
+    echo "  $0 --dataset plant_village_raspberry -q -m resnet,lenet"
+    echo "  $0 --dataset plant_village_orange -q -m resnet,lenet"
     echo "  $0 -m alexnet,simple_cnn,mlp -q    # subset of models, quick"
     echo "  $0 -q                              # quick-test with 8 workers (default)"
     echo "  $0 -j 1 -q                         # sequential quick-test"
@@ -89,6 +95,8 @@ while [[ $# -gt 0 ]]; do
         --max-batch-size) MAX_BATCH_SIZE="$2"; shift 2 ;;
         -j|--workers) WORKERS="$2"; shift 2 ;;
         --parallel) PARALLEL=true; shift ;;
+        --dataset) DATASET="$2"; shift 2 ;;
+        --data-root) DATA_ROOT="$2"; shift 2 ;;
         *)
             echo -e "${RED}Unknown option: $1${NC}"
             show_help
@@ -96,22 +104,82 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ ! -f "data/MNISTtrain.mat" ] && [ "$QUICK_TEST" = false ]; then
-    echo -e "${RED}Full mode requires data/MNISTtrain.mat and data/MNISTtest.mat${NC}"
-    exit 1
-fi
+validate_dataset() {
+    case "$DATASET" in
+        mnist)
+            if [ "$QUICK_TEST" = false ] && [ ! -f "data/MNISTtrain.mat" ]; then
+                echo -e "${RED}Full MNIST mode requires data/MNISTtrain.mat and data/MNISTtest.mat${NC}"
+                exit 1
+            fi
+            ;;
+        strawberry)
+            STRAW_ROOT="${DATA_ROOT:-data/Strawberry/strawberries}"
+            if [ ! -d "$STRAW_ROOT" ]; then
+                echo -e "${RED}Strawberry dataset not found at: $STRAW_ROOT${NC}"
+                exit 1
+            fi
+            for cls in early-turning green late-turning red turning white; do
+                if [ ! -f "$STRAW_ROOT/$cls/color/sets/train.txt" ]; then
+                    echo -e "${RED}Missing split file: $STRAW_ROOT/$cls/color/sets/train.txt${NC}"
+                    exit 1
+                fi
+            done
+            ;;
+        plant_village_raspberry|raspberry)
+            RASP_ROOT="${DATA_ROOT:-data/Plant_Village_Raspberry/raspberries}"
+            if [ ! -d "$RASP_ROOT" ]; then
+                echo -e "${RED}Plant Village Raspberry dataset not found at: $RASP_ROOT${NC}"
+                exit 1
+            fi
+            if [ ! -f "$RASP_ROOT/healthy/color/sets/train.txt" ]; then
+                echo -e "${RED}Missing: $RASP_ROOT/healthy/color/sets/train.txt${NC}"
+                exit 1
+            fi
+            if [ ! -f "$RASP_ROOT/background_without_leaves/without_augmentation/sets/train.txt" ]; then
+                echo -e "${RED}Missing: $RASP_ROOT/background_without_leaves/without_augmentation/sets/train.txt${NC}"
+                exit 1
+            fi
+            ;;
+        plant_village_orange|orange)
+            ORANGE_ROOT="${DATA_ROOT:-data/Plant_Village_Orange/oranges}"
+            if [ ! -d "$ORANGE_ROOT" ]; then
+                echo -e "${RED}Plant Village Orange dataset not found at: $ORANGE_ROOT${NC}"
+                exit 1
+            fi
+            if [ ! -f "$ORANGE_ROOT/huanglongbing_citrus_greening/color/sets/train.txt" ]; then
+                echo -e "${RED}Missing: $ORANGE_ROOT/huanglongbing_citrus_greening/color/sets/train.txt${NC}"
+                exit 1
+            fi
+            if [ ! -f "$ORANGE_ROOT/background_without_leaves/without_augmentation/sets/train.txt" ]; then
+                echo -e "${RED}Missing: $ORANGE_ROOT/background_without_leaves/without_augmentation/sets/train.txt${NC}"
+                exit 1
+            fi
+            ;;
+        *)
+            echo -e "${RED}Unknown dataset: $DATASET${NC}"
+            echo "  Use: mnist, strawberry, plant_village_raspberry, plant_village_orange"
+            exit 1
+            ;;
+    esac
+}
+
+validate_dataset
 
 # Reduce CUDA fragmentation when many models run in parallel
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
-if [ "$QUICK_TEST" = true ] && [ ! -f "data/test_data/test_images.npy" ]; then
-    echo -e "${YELLOW}Quick-test data missing; creating test subset...${NC}"
+if [ "$DATASET" = "mnist" ] && [ "$QUICK_TEST" = true ] && [ ! -f "data/test_data/test_images.npy" ]; then
+    echo -e "${YELLOW}Quick-test MNIST data missing; creating test subset...${NC}"
     python3 utils/create_test_data.py || true
 fi
 
 CMD="python3 -m utils.regression --output-dir $OUTPUT_DIR --report-path $REPORT_PATH"
 CMD="$CMD --max-epochs $MAX_EPOCHS --patience $PATIENCE --min-delta $MIN_DELTA"
 CMD="$CMD --nas-trials $NAS_TRIALS --device $DEVICE --seed $SEED --workers $WORKERS"
+CMD="$CMD --dataset $DATASET"
+if [ -n "$DATA_ROOT" ]; then
+    CMD="$CMD --data-root $DATA_ROOT"
+fi
 if [ "$MAX_BATCH_SIZE" -gt 0 ]; then
     CMD="$CMD --max-batch-size $MAX_BATCH_SIZE"
 fi
@@ -130,6 +198,8 @@ if [ -n "$MODELS" ]; then
 fi
 
 echo -e "${YELLOW}Configuration:${NC}"
+echo "  Dataset: $DATASET"
+[ -n "$DATA_ROOT" ] && echo "  Data root: $DATA_ROOT"
 echo "  Quick test: $QUICK_TEST"
 echo "  Max epochs: $MAX_EPOCHS"
 echo "  Patience: $PATIENCE"

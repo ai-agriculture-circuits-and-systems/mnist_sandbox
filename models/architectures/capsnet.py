@@ -14,6 +14,19 @@ def squash(tensor: torch.Tensor, dim: int = -1) -> torch.Tensor:
     return scale * tensor / torch.sqrt(squared_norm + 1e-8)
 
 
+def primary_spatial_size(input_size: int, kernel_size: int = 9, num_convs: int = 2) -> int:
+    """Return H=W feature map size after stacked valid conv layers."""
+    size = input_size
+    for _ in range(num_convs):
+        size = size - kernel_size + 1
+    if size < 1:
+        raise ValueError(
+            f"input_size={input_size} is too small for {num_convs} "
+            f"conv layers with kernel_size={kernel_size}"
+        )
+    return size
+
+
 class CapsNet(BaseModel):
     """CapsNet with dynamic routing between primary and digit capsules."""
 
@@ -24,6 +37,7 @@ class CapsNet(BaseModel):
         primary_dim: int = 8,
         digit_dim: int = 16,
         routing_iters: int = 3,
+        input_size: int = 28,
     ) -> None:
         super().__init__()
         self.num_classes = num_classes
@@ -31,6 +45,10 @@ class CapsNet(BaseModel):
         self.primary_dim = primary_dim
         self.digit_dim = digit_dim
         self.routing_iters = routing_iters
+        self.input_size = input_size
+
+        spatial = primary_spatial_size(input_size)
+        num_routes = primary_caps * spatial * spatial
 
         self.conv = nn.Sequential(
             nn.Conv2d(1, 256, kernel_size=9),
@@ -38,7 +56,7 @@ class CapsNet(BaseModel):
         )
         self.primary = nn.Conv2d(256, primary_caps * primary_dim, kernel_size=9)
         self.route_weights = nn.Parameter(
-            torch.randn(1, primary_caps * 12 * 12, num_classes, digit_dim, primary_dim) * 0.01
+            torch.randn(1, num_routes, num_classes, digit_dim, primary_dim) * 0.01
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

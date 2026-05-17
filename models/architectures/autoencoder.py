@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List
+from typing import List, Optional
 
 from ..base_model import BaseModel
 
@@ -34,12 +34,23 @@ class AutoencoderBase(BaseModel):
 
 class SimpleAutoencoder(AutoencoderBase):
     """Simple fully connected autoencoder"""
-    def __init__(self, num_classes=10, latent_dim=32, hidden_dims=[128, 64]):
+    def __init__(
+        self,
+        num_classes: int = 10,
+        latent_dim: int = 32,
+        hidden_dims: Optional[List[int]] = None,
+        input_size: int = 28,
+        channels: int = 1,
+    ):
         super(SimpleAutoencoder, self).__init__(num_classes=num_classes, latent_dim=latent_dim)
-        
+        hidden_dims = hidden_dims or [128, 64]
+        self.input_size = input_size
+        self.channels = channels
+        flat_dim = channels * input_size * input_size
+        input_dim = flat_dim
+
         # Encoder
         encoder_layers = []
-        input_dim = 784  # 28x28 = 784 pixels
         
         for hidden_dim in hidden_dims:
             encoder_layers.extend([
@@ -62,7 +73,7 @@ class SimpleAutoencoder(AutoencoderBase):
             ])
             input_dim = hidden_dim
         
-        decoder_layers.append(nn.Linear(input_dim, 784))
+        decoder_layers.append(nn.Linear(input_dim, flat_dim))
         decoder_layers.append(nn.Sigmoid())  # Output between 0 and 1
         self.decoder = nn.Sequential(*decoder_layers)
     
@@ -73,8 +84,7 @@ class SimpleAutoencoder(AutoencoderBase):
     
     def decode(self, z):
         x = self.decoder(z)
-        # Reshape to original dimensions
-        return x.view(x.size(0), 1, 28, 28)
+        return x.view(x.size(0), self.channels, self.input_size, self.input_size)
     
     def forward(self, x):
         z = self.encode(x)

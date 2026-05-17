@@ -29,12 +29,23 @@ class AutoencoderTrainer:
         )
         self.loss_name = loss_name
 
+    def _prepare_reconstruction_targets(
+        self, recon: torch.Tensor, targets: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Clamp tensors to [0, 1] when using BCE reconstruction loss."""
+        if self.loss_name != "bce":
+            return recon, targets
+        eps = 1e-7
+        return recon.clamp(eps, 1.0 - eps), targets.clamp(0.0, 1.0)
+
     def _compute_loss(self, outputs: torch.Tensor | tuple, inputs: torch.Tensor) -> torch.Tensor:
         if isinstance(outputs, tuple):
             recon, mu, logvar = outputs
+            recon, inputs = self._prepare_reconstruction_targets(recon, inputs)
             recon_loss = self.criterion(recon, inputs)
             kl = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
             return recon_loss + 0.001 * kl
+        outputs, inputs = self._prepare_reconstruction_targets(outputs, inputs)
         return self.criterion(outputs, inputs)
 
     def train_epoch(self, train_loader) -> tuple[float, float]:
@@ -68,6 +79,14 @@ class AutoencoderEvaluator:
         self.device = device
         self.criterion = get_autoencoder_loss(loss_name)
 
+    def _clamp_bce_pair(
+        self, outputs: torch.Tensor, inputs: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.criterion.__class__.__name__ != "BCELoss":
+            return outputs, inputs
+        eps = 1e-7
+        return outputs.clamp(eps, 1.0 - eps), inputs.clamp(0.0, 1.0)
+
     def evaluate(self, test_loader) -> tuple[float, float, list, list]:
         self.model.eval()
         running_loss = 0.0
@@ -79,6 +98,7 @@ class AutoencoderEvaluator:
                 outputs = self.model(inputs)
                 if isinstance(outputs, tuple):
                     outputs = outputs[0]
+                outputs, inputs = self._clamp_bce_pair(outputs, inputs)
                 loss = self.criterion(outputs, inputs)
                 running_loss += loss.item()
                 pbar.set_postfix({"loss": running_loss / len(pbar)})

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import multiprocessing as mp
 import os
 import random
@@ -28,6 +29,7 @@ from models.model_factory import (
 )
 from utils.autoencoder_trainer import AutoencoderEvaluator, AutoencoderTrainer
 from utils.data_loader import DataLoaderFactory
+from utils.dataset_config import DatasetSpec, get_dataset_spec
 from utils.early_stopping import EarlyStopping
 from utils.evaluator import Evaluator
 from utils.gantrainer import GANTrainer
@@ -88,6 +90,8 @@ class RegressionConfig:
     seed: int = 42
     workers: int = DEFAULT_WORKERS
     max_batch_size: int = 32
+    dataset: str = "mnist"
+    data_root: str = ""
 
 
 def parse_args() -> RegressionConfig:
@@ -122,6 +126,18 @@ def parse_args() -> RegressionConfig:
         default=0,
         help="Cap NAS batch size (0=auto: 16 if parallel else 32)",
     )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="mnist",
+        help="Dataset: mnist | strawberry | plant_village_raspberry | plant_village_orange",
+    )
+    parser.add_argument(
+        "--data-root",
+        type=str,
+        default="",
+        help="Override dataset root directory (e.g. data/Strawberry/strawberries)",
+    )
     args = parser.parse_args()
 
     quick = args.quick_test and not args.full
@@ -155,6 +171,8 @@ def parse_args() -> RegressionConfig:
         seed=args.seed,
         workers=workers,
         max_batch_size=max_batch_size,
+        dataset=args.dataset,
+        data_root=args.data_root,
     )
 
 
@@ -204,9 +222,14 @@ def get_worker_device(config: RegressionConfig, worker_id: int) -> torch.device:
 
 def release_cuda_memory(device: torch.device) -> None:
     """Free cached GPU memory between trials."""
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
+    if device.type != "cuda":
+        return
+    try:
         torch.cuda.synchronize(device)
+        torch.cuda.empty_cache()
+    except RuntimeError:
+        # GPU may be in a bad state after a device-side assert; skip cleanup.
+        pass
 
 
 def is_oom_error(exc: BaseException) -> bool:
@@ -269,7 +292,14 @@ def sample_hyperparameters(rng: random.Random, config: RegressionConfig) -> dict
     }
 
 
-def get_image_size(model_name: str) -> int:
+def resolve_dataset_spec(config: RegressionConfig) -> DatasetSpec:
+    """Build dataset spec from regression config."""
+    return get_dataset_spec(config.dataset, config.data_root or None)
+
+
+def get_image_size(model_name: str, dataset_spec: DatasetSpec) -> int:
+    if dataset_spec.name != "mnist":
+        return dataset_spec.default_image_size
     return 224 if model_name in LARGE_IMAGE_MODELS else 28
 
 
@@ -345,7 +375,13 @@ def build_model_kwargs(model_name: str, image_size: int) -> dict[str, Any]:
     if model_name == "lcnet":
         return {"width_mult": 1.0}
     if model_name == "capsnet":
-        return {"primary_caps": 32, "primary_dim": 8, "digit_dim": 16, "routing_iters": 3}
+        return {
+            "primary_caps": 32,
+            "primary_dim": 8,
+            "digit_dim": 16,
+            "routing_iters": 3,
+            "input_size": image_size,
+        }
     if model_name == "coord_resnet":
         return {"num_blocks": [2, 2, 2, 2], "reduction": 32}
     if model_name == "hardnet":
@@ -390,6 +426,7 @@ def build_model_kwargs(model_name: str, image_size: int) -> dict[str, Any]:
         return {"img_size": image_size, "dims": [32, 64, 128, 256], "depths": [2, 2, 4, 2]}
     if model_name == "vim_tiny":
         return {"img_size": image_size, "embed_dim": 128, "depths": [2, 4, 6, 2]}
+    seq_length = image_size * image_size
     if model_name == "bert":
         return {
             "hidden_size": 128,
@@ -397,7 +434,7 @@ def build_model_kwargs(model_name: str, image_size: int) -> dict[str, Any]:
             "num_heads": 4,
             "mlp_ratio": 4.0,
             "dropout": 0.1,
-            "max_seq_length": 784,
+            "max_seq_length": seq_length,
         }
     if model_name == "gpt":
         return {
@@ -406,7 +443,7 @@ def build_model_kwargs(model_name: str, image_size: int) -> dict[str, Any]:
             "num_heads": 4,
             "mlp_ratio": 4.0,
             "dropout": 0.1,
-            "max_seq_length": 784,
+            "max_seq_length": seq_length,
         }
     if model_name in ("lstm", "gru"):
         return {"hidden_size": 128, "num_layers": 2, "dropout": 0.2, "bidirectional": False}
@@ -418,9 +455,19 @@ def build_model_kwargs(model_name: str, image_size: int) -> dict[str, Any]:
             "image_size": image_size,
         }
     if model_name in ("dcgan", "wgan", "cgan"):
-        return {"latent_dim": 100, "generator_channels": 64, "discriminator_channels": 64}
+        return {
+            "latent_dim": 100,
+            "generator_channels": 64,
+            "discriminator_channels": 64,
+            "image_size": image_size,
+        }
     if model_name == "simple_ae":
-        return {"latent_dim": 32, "hidden_dims": [128, 64]}
+        return {
+            "latent_dim": 32,
+            "hidden_dims": [128, 64],
+            "input_size": image_size,
+            "channels": 1,
+        }
     if model_name == "conv_ae":
         return {"latent_dim": 32, "channels": [32, 64, 128], "input_size": image_size}
     if model_name == "vae":
@@ -435,23 +482,20 @@ def get_data_loaders(
     batch_size: int,
     quick_test: bool,
     image_size: int,
+    dataset_spec: DatasetSpec,
     loader_workers: int = 4,
+    seed: int = 42,
 ):
+    del model_name  # image size already resolved per model + dataset
     loader_workers = max(loader_workers, 0)
-    if quick_test:
-        return DataLoaderFactory.get_data_loaders(
-            train_path="data/test_data/test_images.npy",
-            test_path="data/test_data/test_images.npy",
-            batch_size=min(batch_size, 32),
-            num_workers=min(loader_workers, 2),
-            image_size=image_size,
-        )
-    return DataLoaderFactory.get_data_loaders(
-        train_path="data/MNISTtrain.mat",
-        test_path="data/MNISTtest.mat",
-        batch_size=batch_size,
-        num_workers=loader_workers,
+    num_workers = min(loader_workers, 2) if quick_test else loader_workers
+    return DataLoaderFactory.get_loaders_for_dataset(
+        spec=dataset_spec,
+        batch_size=min(batch_size, 32) if quick_test else batch_size,
+        num_workers=num_workers,
         image_size=image_size,
+        quick_test=quick_test,
+        seed=seed,
     )
 
 
@@ -465,7 +509,8 @@ def run_trial(
     loader_workers: int = 4,
 ) -> TrialResult:
     cat = model_category(model_name)
-    image_size = get_image_size(model_name)
+    dataset_spec = resolve_dataset_spec(config)
+    image_size = get_image_size(model_name, dataset_spec)
     model = None
 
     try:
@@ -474,12 +519,17 @@ def run_trial(
             hyperparams["batch_size"],
             config.quick_test,
             image_size,
+            dataset_spec,
             loader_workers=loader_workers,
+            seed=config.seed,
         )
 
         model_kwargs = build_model_kwargs(model_name, image_size)
         model = ModelFactory.create_model(
-            model_name, num_classes=10, enable_logging=False, **model_kwargs
+            model_name,
+            num_classes=dataset_spec.num_classes,
+            enable_logging=False,
+            **model_kwargs,
         )
         model = model.to(device)
 
@@ -655,6 +705,94 @@ def format_hyperparameters(params: dict[str, Any]) -> str:
     return ", ".join(f"{k}={v}" for k, v in sorted(params.items()))
 
 
+def escape_md_cell(text: str) -> str:
+    """Escape characters that break markdown table cells."""
+    return str(text).replace("|", "\\|").replace("\n", " ")
+
+
+def format_metric(value: float, precision: int = 4) -> str:
+    """Format a numeric metric for markdown tables (handles nan/inf/huge values)."""
+    if not math.isfinite(value):
+        return "—"
+    if abs(value) >= 1_000_000 or (0 < abs(value) < 1e-4):
+        return f"{value:.4e}"
+    return f"{value:.{precision}f}"
+
+
+def markdown_table(headers: List[str], rows: List[List[str]]) -> List[str]:
+    """Build a GFM markdown table; each row is a single line."""
+    header_line = "| " + " | ".join(escape_md_cell(h) for h in headers) + " |"
+    separator_line = "| " + " | ".join("---" for _ in headers) + " |"
+    body_lines = [
+        "| " + " | ".join(escape_md_cell(cell) for cell in row) + " |" for row in rows
+    ]
+    return [header_line, separator_line, *body_lines]
+
+
+def best_per_model(results: List[TrialResult], higher_is_better: bool) -> List[TrialResult]:
+    """Keep the single best trial per model name."""
+    best_map: Dict[str, TrialResult] = {}
+    for result in results:
+        current = best_map.get(result.model)
+        if current is None:
+            best_map[result.model] = result
+            continue
+        if not math.isfinite(result.metric_value):
+            continue
+        if not math.isfinite(current.metric_value):
+            best_map[result.model] = result
+            continue
+        if higher_is_better:
+            if result.metric_value > current.metric_value:
+                best_map[result.model] = result
+        elif result.metric_value < current.metric_value:
+            best_map[result.model] = result
+    ranked = list(best_map.values())
+    ranked.sort(key=lambda r: r.metric_value, reverse=higher_is_better)
+    return ranked
+
+
+def _trial_row_classifier(rank: int, result: TrialResult) -> List[str]:
+    return [
+        str(rank),
+        result.model,
+        result.loss,
+        result.optimizer,
+        format_hyperparameters(result.hyperparameters),
+        format_metric(result.metric_value, precision=2),
+        format_metric(result.test_loss),
+        str(result.epochs_run),
+        str(result.epochs_to_convergence),
+    ]
+
+
+def _trial_row_autoencoder(rank: int, result: TrialResult) -> List[str]:
+    return [
+        str(rank),
+        result.model,
+        result.loss,
+        result.optimizer,
+        format_hyperparameters(result.hyperparameters),
+        format_metric(result.metric_value),
+        str(result.epochs_run),
+        str(result.epochs_to_convergence),
+    ]
+
+
+def _trial_row_gan(rank: int, result: TrialResult) -> List[str]:
+    return [
+        str(rank),
+        result.model,
+        result.loss,
+        result.optimizer,
+        format_hyperparameters(result.hyperparameters),
+        format_metric(result.train_loss),
+        format_metric(result.test_loss),
+        str(result.epochs_run),
+        str(result.epochs_to_convergence),
+    ]
+
+
 def run_models_subset(
     model_names: List[str],
     config: RegressionConfig,
@@ -772,69 +910,137 @@ def generate_report(results: List[TrialResult], config: RegressionConfig, elapse
     autoencoders.sort(key=lambda r: r.metric_value)
     gans.sort(key=lambda r: r.metric_value)
 
+    classifier_best = best_per_model(classifiers, higher_is_better=True)
+    autoencoder_best = best_per_model(autoencoders, higher_is_better=False)
+    gan_best = best_per_model(gans, higher_is_better=False)
+
+    dataset_spec = resolve_dataset_spec(config)
     lines = [
-        "# MNIST Regression Report",
+        f"# {dataset_spec.name.title()} Regression Report",
         "",
-        f"Generated: {datetime.now().isoformat(timespec='seconds')}",
-        f"Mode: {'quick-test' if config.quick_test else 'full dataset'}",
-        f"Max epochs: {config.max_epochs} | Early-stop patience: {config.patience} | "
-        f"Min delta: {config.min_delta} | NAS trials per config: {config.nas_trials} | "
-        f"Workers: {config.workers} | Max batch: {config.max_batch_size}",
-        f"Total wall time: {elapsed:.1f}s",
+        "## Run configuration",
+        "",
+        *markdown_table(
+            ["Setting", "Value"],
+            [
+                ["Generated", datetime.now().isoformat(timespec="seconds")],
+                ["Dataset", dataset_spec.name],
+                ["Classes", str(dataset_spec.num_classes)],
+                ["Class names", ", ".join(dataset_spec.class_names)],
+                ["Mode", "quick-test" if config.quick_test else "full dataset"],
+                ["Max epochs", str(config.max_epochs)],
+                ["Early-stop patience", str(config.patience)],
+                ["Min delta", str(config.min_delta)],
+                ["NAS trials per config", str(config.nas_trials)],
+                ["Workers", str(config.workers)],
+                ["Max batch size", str(config.max_batch_size)],
+                ["Total wall time", f"{elapsed:.1f}s"],
+            ],
+        ),
         "",
         "Training stops when validation metric shows no significant improvement "
         f"for {config.patience} consecutive epochs.",
         "",
-        "## Classification Models (ranked by test accuracy)",
+        "## Classification — best per model",
         "",
-        "| Rank | Model | Loss | Optimizer | Hyperparameters | Test Acc (%) | "
-        "Test Loss | Epochs Run | Convergence Epoch |",
-        "|------|-------|------|-----------|-----------------|--------------|"
-        "-----------|------------|-------------------|",
+        *markdown_table(
+            [
+                "Rank",
+                "Model",
+                "Loss",
+                "Optimizer",
+                "Hyperparameters",
+                "Test Acc (%)",
+                "Test Loss",
+                "Epochs Run",
+                "Convergence Epoch",
+            ],
+            [_trial_row_classifier(i, r) for i, r in enumerate(classifier_best, 1)],
+        ),
+        "",
+        f"## Classification — all trials ({len(classifiers)} rows)",
+        "",
+        *markdown_table(
+            [
+                "Rank",
+                "Model",
+                "Loss",
+                "Optimizer",
+                "Hyperparameters",
+                "Test Acc (%)",
+                "Test Loss",
+                "Epochs Run",
+                "Convergence Epoch",
+            ],
+            [_trial_row_classifier(i, r) for i, r in enumerate(classifiers, 1)],
+        ),
+        "",
+        "## Autoencoder — best per model",
+        "",
+        *markdown_table(
+            [
+                "Rank",
+                "Model",
+                "Loss",
+                "Optimizer",
+                "Hyperparameters",
+                "Recon Loss",
+                "Epochs Run",
+                "Convergence Epoch",
+            ],
+            [_trial_row_autoencoder(i, r) for i, r in enumerate(autoencoder_best, 1)],
+        ),
+        "",
+        f"## Autoencoder — all trials ({len(autoencoders)} rows)",
+        "",
+        *markdown_table(
+            [
+                "Rank",
+                "Model",
+                "Loss",
+                "Optimizer",
+                "Hyperparameters",
+                "Recon Loss",
+                "Epochs Run",
+                "Convergence Epoch",
+            ],
+            [_trial_row_autoencoder(i, r) for i, r in enumerate(autoencoders, 1)],
+        ),
+        "",
+        "## GAN — best per model",
+        "",
+        *markdown_table(
+            [
+                "Rank",
+                "Model",
+                "Loss",
+                "Optimizer",
+                "Hyperparameters",
+                "G Loss",
+                "D Loss",
+                "Epochs Run",
+                "Convergence Epoch",
+            ],
+            [_trial_row_gan(i, r) for i, r in enumerate(gan_best, 1)],
+        ),
+        "",
+        f"## GAN — all trials ({len(gans)} rows)",
+        "",
+        *markdown_table(
+            [
+                "Rank",
+                "Model",
+                "Loss",
+                "Optimizer",
+                "Hyperparameters",
+                "G Loss",
+                "D Loss",
+                "Epochs Run",
+                "Convergence Epoch",
+            ],
+            [_trial_row_gan(i, r) for i, r in enumerate(gans, 1)],
+        ),
     ]
-
-    for rank, r in enumerate(classifiers, 1):
-        lines.append(
-            f"| {rank} | {r.model} | {r.loss} | {r.optimizer} | "
-            f"{format_hyperparameters(r.hyperparameters)} | {r.metric_value:.2f} | "
-            f"{r.test_loss:.4f} | {r.epochs_run} | {r.epochs_to_convergence} |"
-        )
-
-    lines.extend(
-        [
-            "",
-            "## Autoencoder Models (ranked by reconstruction loss, lower is better)",
-            "",
-            "| Rank | Model | Loss | Optimizer | Hyperparameters | Recon Loss | "
-            "Epochs Run | Convergence Epoch |",
-            "|------|-------|------|-----------|-----------------|------------|"
-            "------------|-------------------|",
-        ]
-    )
-    for rank, r in enumerate(autoencoders, 1):
-        lines.append(
-            f"| {rank} | {r.model} | {r.loss} | {r.optimizer} | "
-            f"{format_hyperparameters(r.hyperparameters)} | {r.metric_value:.4f} | "
-            f"{r.epochs_run} | {r.epochs_to_convergence} |"
-        )
-
-    lines.extend(
-        [
-            "",
-            "## GAN Models (ranked by generator loss, lower is better)",
-            "",
-            "| Rank | Model | Loss | Optimizer | Hyperparameters | G Loss | D Loss | "
-            "Epochs Run | Convergence Epoch |",
-            "|------|-------|------|-----------|-----------------|--------|--------|"
-            "------------|-------------------|",
-        ]
-    )
-    for rank, r in enumerate(gans, 1):
-        lines.append(
-            f"| {rank} | {r.model} | {r.loss} | {r.optimizer} | "
-            f"{format_hyperparameters(r.hyperparameters)} | {r.train_loss:.4f} | "
-            f"{r.test_loss:.4f} | {r.epochs_run} | {r.epochs_to_convergence} |"
-        )
 
     if failed:
         lines.extend(["", "## Failed Configurations", ""])
@@ -860,6 +1066,14 @@ def main() -> int:
     config = parse_args()
     random.seed(config.seed)
 
+    dataset_spec = resolve_dataset_spec(config)
+    if not config.quick_test:
+        dataset_spec.validate()
+    elif dataset_spec.name == "mnist" and not os.path.isfile(dataset_spec.quick_train_path):
+        print("Quick-test MNIST subset missing; run: python3 utils/create_test_data.py")
+    elif dataset_spec.train_source == "pv_style":
+        dataset_spec.validate()
+
     os.makedirs(config.output_dir, exist_ok=True)
     partial_dir = os.path.join(config.output_dir, "partials")
     if config.workers > 1:
@@ -870,7 +1084,8 @@ def main() -> int:
     mode = "parallel" if config.workers > 1 else "sequential"
     n_gpu = torch.cuda.device_count() if torch.cuda.is_available() else 0
     print(
-        f"Regression suite ({mode}, workers={config.workers}, "
+        f"Regression suite ({mode}, dataset={dataset_spec.name}, "
+        f"classes={dataset_spec.num_classes}, workers={config.workers}, "
         f"quick_test={config.quick_test}, max_batch={config.max_batch_size})"
     )
     print(f"Models: {len(config.models)}")

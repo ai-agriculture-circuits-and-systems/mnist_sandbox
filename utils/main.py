@@ -402,7 +402,9 @@ def main():
     elif args.model == 'simple_ae':
         model_kwargs = {
             'latent_dim': args.simple_ae_latent_dim,
-            'hidden_dims': [int(x) for x in args.simple_ae_hidden_dims.split(',')]
+            'hidden_dims': [int(x) for x in args.simple_ae_hidden_dims.split(',')],
+            'input_size': args.image_size,
+            'channels': 1,
         }
     elif args.model == 'conv_ae':
         model_kwargs = {
