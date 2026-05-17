@@ -38,6 +38,7 @@ class CapsNet(BaseModel):
         digit_dim: int = 16,
         routing_iters: int = 3,
         input_size: int = 28,
+        route_spatial: int = 12,
     ) -> None:
         super().__init__()
         self.num_classes = num_classes
@@ -46,9 +47,10 @@ class CapsNet(BaseModel):
         self.digit_dim = digit_dim
         self.routing_iters = routing_iters
         self.input_size = input_size
+        self.route_spatial = route_spatial
 
-        spatial = primary_spatial_size(input_size)
-        num_routes = primary_caps * spatial * spatial
+        # Pool primary maps to a fixed grid so routing params do not grow with input_size^2.
+        num_routes = primary_caps * route_spatial * route_spatial
 
         self.conv = nn.Sequential(
             nn.Conv2d(1, 256, kernel_size=9),
@@ -62,9 +64,12 @@ class CapsNet(BaseModel):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv(x)
         x = self.primary(x)
-        batch, _, h, w = x.size()
-        u = x.view(batch, self.primary_caps, self.primary_dim, h, w)
-        u = u.permute(0, 1, 3, 4, 2).reshape(batch, self.primary_caps * h * w, self.primary_dim)
+        x = F.adaptive_avg_pool2d(x, (self.route_spatial, self.route_spatial))
+        batch = x.size(0)
+        u = x.view(batch, self.primary_caps, self.primary_dim, self.route_spatial, self.route_spatial)
+        u = u.permute(0, 1, 3, 4, 2).reshape(
+            batch, self.primary_caps * self.route_spatial * self.route_spatial, self.primary_dim
+        )
         u = squash(u, dim=-1)
 
         weights = self.route_weights[0, : u.size(1)]

@@ -9,6 +9,26 @@ from tqdm import tqdm
 from utils.training_factory import get_autoencoder_loss, get_optimizer
 
 
+def _uses_bce_loss(loss_name: str) -> bool:
+    """Return True when the criterion is binary cross-entropy."""
+    return loss_name.lower() in {"bce", "binary_cross_entropy"}
+
+
+def _clamp_bce_tensor(tensor: torch.Tensor) -> torch.Tensor:
+    """Sanitize values for BCE: finite and strictly inside [0, 1]."""
+    tensor = torch.nan_to_num(tensor, nan=0.5, posinf=1.0, neginf=0.0)
+    return torch.clamp(tensor, 1e-6, 1.0 - 1e-6)
+
+
+def _prepare_bce_reconstruction_pair(
+    recon: torch.Tensor, targets: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Map reconstructions and targets into the valid range for BCELoss."""
+    if recon.min() < 0 or recon.max() > 1:
+        recon = torch.sigmoid(recon)
+    return _clamp_bce_tensor(recon), _clamp_bce_tensor(targets)
+
+
 class AutoencoderTrainer:
     """Trainer for reconstruction-based autoencoder models."""
 
@@ -32,11 +52,10 @@ class AutoencoderTrainer:
     def _prepare_reconstruction_targets(
         self, recon: torch.Tensor, targets: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Clamp tensors to [0, 1] when using BCE reconstruction loss."""
-        if self.loss_name != "bce":
-            return recon, targets
-        eps = 1e-7
-        return recon.clamp(eps, 1.0 - eps), targets.clamp(0.0, 1.0)
+        """Prepare reconstruction and targets for the active loss."""
+        if _uses_bce_loss(self.loss_name):
+            return _prepare_bce_reconstruction_pair(recon, targets)
+        return recon, targets
 
     def _compute_loss(self, outputs: torch.Tensor | tuple, inputs: torch.Tensor) -> torch.Tensor:
         if isinstance(outputs, tuple):
@@ -77,15 +96,15 @@ class AutoencoderEvaluator:
     ) -> None:
         self.model = model
         self.device = device
+        self.loss_name = loss_name
         self.criterion = get_autoencoder_loss(loss_name)
 
     def _clamp_bce_pair(
         self, outputs: torch.Tensor, inputs: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        if self.criterion.__class__.__name__ != "BCELoss":
+        if not _uses_bce_loss(self.loss_name):
             return outputs, inputs
-        eps = 1e-7
-        return outputs.clamp(eps, 1.0 - eps), inputs.clamp(0.0, 1.0)
+        return _prepare_bce_reconstruction_pair(outputs, inputs)
 
     def evaluate(self, test_loader) -> tuple[float, float, list, list]:
         self.model.eval()

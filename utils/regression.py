@@ -54,6 +54,18 @@ SEARCH_SPACE = {
 
 DEFAULT_WORKERS = 8
 MIN_BATCH_SIZE = 4
+# Per-model batch caps for quick regression on large images (routing-heavy or seq models).
+MODEL_MAX_BATCH: dict[str, int] = {
+    "capsnet": 8,
+    "bert": 8,
+    "gpt": 8,
+    "vit": 8,
+    "swin_tiny": 8,
+    "deit": 8,
+    "coatnet": 8,
+    "vim_tiny": 8,
+    "wide_resnet": 8,
+}
 
 
 @dataclass
@@ -237,7 +249,26 @@ def is_oom_error(exc: BaseException) -> bool:
     if isinstance(exc, torch.cuda.OutOfMemoryError):
         return True
     message = str(exc).lower()
-    return "out of memory" in message or "cuda error" in message
+    return "out of memory" in message
+
+
+def is_cuda_fatal_error(exc: BaseException) -> bool:
+    """Return True for unrecoverable CUDA failures (OOM, asserts, async errors)."""
+    if isinstance(exc, torch.cuda.OutOfMemoryError):
+        return True
+    message = str(exc).lower()
+    return (
+        "out of memory" in message
+        or "device-side assert" in message
+        or "cuda error" in message
+        or "acceleratorerror" in type(exc).__name__.lower()
+    )
+
+
+def max_batch_for_model(model_name: str, config: RegressionConfig) -> int:
+    """Effective max batch size for a model (search space cap + per-model limits)."""
+    cap = MODEL_MAX_BATCH.get(model_name, config.max_batch_size)
+    return min(config.max_batch_size, cap)
 
 
 def init_worker_cuda(device: torch.device) -> None:
@@ -280,11 +311,16 @@ def valid_optimizers(model_name: str) -> tuple[str, ...]:
     return OPTIMIZERS
 
 
-def sample_hyperparameters(rng: random.Random, config: RegressionConfig) -> dict[str, Any]:
-    """Sample hyperparameters respecting the configured batch-size cap."""
-    batch_choices = [b for b in SEARCH_SPACE["batch_size"] if b <= config.max_batch_size]
+def sample_hyperparameters(
+    rng: random.Random,
+    config: RegressionConfig,
+    model_name: str,
+) -> dict[str, Any]:
+    """Sample hyperparameters respecting per-model batch-size caps."""
+    model_cap = max_batch_for_model(model_name, config)
+    batch_choices = [b for b in SEARCH_SPACE["batch_size"] if b <= model_cap]
     if not batch_choices:
-        batch_choices = [config.max_batch_size]
+        batch_choices = [model_cap]
     return {
         "lr": rng.choice(SEARCH_SPACE["lr"]),
         "batch_size": rng.choice(batch_choices),
@@ -375,11 +411,22 @@ def build_model_kwargs(model_name: str, image_size: int) -> dict[str, Any]:
     if model_name == "lcnet":
         return {"width_mult": 1.0}
     if model_name == "capsnet":
+        # Fewer capsules on large images; route grid is fixed via route_spatial in CapsNet.
+        if image_size > 84:
+            return {
+                "primary_caps": 16,
+                "primary_dim": 8,
+                "digit_dim": 16,
+                "routing_iters": 3,
+                "route_spatial": 12,
+                "input_size": image_size,
+            }
         return {
             "primary_caps": 32,
             "primary_dim": 8,
             "digit_dim": 16,
             "routing_iters": 3,
+            "route_spatial": 12,
             "input_size": image_size,
         }
     if model_name == "coord_resnet":
@@ -610,7 +657,7 @@ def search_best_config(
     higher_is_better = model_category(model_name) == "classifier"
 
     for _ in range(config.nas_trials):
-        hyperparams = sample_hyperparameters(rng, config)
+        hyperparams = sample_hyperparameters(rng, config, model_name)
         result: Optional[TrialResult] = None
         oom_attempts = 0
 
@@ -626,32 +673,49 @@ def search_best_config(
                     loader_workers=loader_workers,
                 )
             except Exception as exc:
-                if is_oom_error(exc) and hyperparams["batch_size"] > MIN_BATCH_SIZE:
-                    oom_attempts += 1
-                    hyperparams["batch_size"] = max(
-                        MIN_BATCH_SIZE, hyperparams["batch_size"] // 2
-                    )
+                if is_cuda_fatal_error(exc):
                     release_cuda_memory(device)
-                    print(
-                        f"OOM for {model_name} ({loss_name}/{optimizer_name}); "
-                        f"retry with batch_size={hyperparams['batch_size']}",
-                        flush=True,
-                    )
-                    if oom_attempts >= 4:
-                        result = TrialResult(
-                            model=model_name,
-                            loss=loss_name,
-                            optimizer=optimizer_name,
-                            hyperparameters=hyperparams,
-                            metric_name="error",
-                            metric_value=0.0,
-                            train_loss=0.0,
-                            test_loss=0.0,
-                            epochs_run=0,
-                            epochs_to_convergence=0,
-                            status="failed",
-                            error=f"CUDA OOM after batch-size retries: {exc}",
+                    if is_oom_error(exc) and hyperparams["batch_size"] > MIN_BATCH_SIZE:
+                        oom_attempts += 1
+                        prev = hyperparams["batch_size"]
+                        hyperparams["batch_size"] = max(
+                            MIN_BATCH_SIZE, hyperparams["batch_size"] // 2
                         )
+                        print(
+                            f"OOM for {model_name} ({loss_name}/{optimizer_name}); "
+                            f"retry with batch_size={hyperparams['batch_size']}",
+                            flush=True,
+                        )
+                        if oom_attempts >= 4:
+                            result = TrialResult(
+                                model=model_name,
+                                loss=loss_name,
+                                optimizer=optimizer_name,
+                                hyperparameters=hyperparams,
+                                metric_name="error",
+                                metric_value=0.0,
+                                train_loss=0.0,
+                                test_loss=0.0,
+                                epochs_run=0,
+                                epochs_to_convergence=0,
+                                status="failed",
+                                error=f"CUDA OOM after batch-size retries: {exc}",
+                            )
+                        continue
+                    result = TrialResult(
+                        model=model_name,
+                        loss=loss_name,
+                        optimizer=optimizer_name,
+                        hyperparameters=hyperparams,
+                        metric_name="error",
+                        metric_value=0.0,
+                        train_loss=0.0,
+                        test_loss=0.0,
+                        epochs_run=0,
+                        epochs_to_convergence=0,
+                        status="failed",
+                        error=str(exc),
+                    )
                     continue
 
                 result = TrialResult(
