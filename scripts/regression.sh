@@ -4,6 +4,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -105,7 +109,7 @@ if [ "$QUICK_TEST" = true ] && [ ! -f "data/test_data/test_images.npy" ]; then
     python3 utils/create_test_data.py || true
 fi
 
-CMD="python3 regression.py --output-dir $OUTPUT_DIR --report-path $REPORT_PATH"
+CMD="python3 -m utils.regression --output-dir $OUTPUT_DIR --report-path $REPORT_PATH"
 CMD="$CMD --max-epochs $MAX_EPOCHS --patience $PATIENCE --min-delta $MIN_DELTA"
 CMD="$CMD --nas-trials $NAS_TRIALS --device $DEVICE --seed $SEED --workers $WORKERS"
 if [ "$MAX_BATCH_SIZE" -gt 0 ]; then

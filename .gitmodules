@@ -1,0 +1,3 @@
+[submodule "data/Strawberry"]
+	path = data/Strawberry
+	url = git@github.com:ai-agriculture-circuits-and-systems/Strawberry.git

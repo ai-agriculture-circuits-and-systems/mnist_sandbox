@@ -23,7 +23,11 @@ class RelativeAttention2d(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch, channels, height, width = x.size()
-        qkv = self.qkv(self.norm(x))
+        attn_in = x
+        if height * width > 49:
+            attn_in = F.adaptive_avg_pool2d(x, 7)
+        ah, aw = attn_in.shape[-2:]
+        qkv = self.qkv(self.norm(attn_in))
         q, k, v = torch.chunk(qkv, 3, dim=1)
         q = q.reshape(batch, self.num_heads, channels // self.num_heads, -1)
         k = k.reshape(batch, self.num_heads, channels // self.num_heads, -1)
@@ -31,7 +35,9 @@ class RelativeAttention2d(nn.Module):
         attn = (q.transpose(-2, -1) @ k) * self.scale
         attn = attn.softmax(dim=-1)
         out = (attn @ v.transpose(-2, -1)).transpose(-2, -1)
-        out = out.reshape(batch, channels, height, width)
+        out = out.reshape(batch, channels, ah, aw)
+        if (ah, aw) != (height, width):
+            out = F.interpolate(out, size=(height, width), mode="bilinear", align_corners=False)
         return x + self.proj(out)
 
 

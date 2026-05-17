@@ -70,22 +70,28 @@ class MBConv(nn.Module):
         )
         
         # Skip connection
-        self.skip = nn.Sequential()
         if stride == 1 and in_channels == out_channels:
-            self.skip = nn.Sequential()
+            self.skip = nn.Identity()
+        else:
+            self.skip = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
         
         # Dropout
         self.dropout = nn.Dropout2d(drop_rate)
 
     def forward(self, x):
         skip = self.skip(x)
-        
+
         x = self.expand(x)
         x = self.depthwise(x)
         x = self.se(x)
         x = self.project(x)
         x = self.dropout(x)
-        
+
+        if x.shape != skip.shape:
+            skip = F.interpolate(skip, size=x.shape[2:], mode="bilinear", align_corners=False)
         x = x + skip
         return x
 
@@ -163,10 +169,12 @@ class EfficientNet(BaseModel):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
             elif isinstance(m, nn.BatchNorm2d):
                 nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
-                nn.init.constant_(m.bias, 0)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         x = self.stem(x)

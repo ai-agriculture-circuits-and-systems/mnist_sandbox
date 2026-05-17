@@ -1,5 +1,9 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -475,7 +479,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Build command
-CMD="python3 main.py --model $MODEL --batch-size $BATCH_SIZE --epochs $EPOCHS --lr $LEARNING_RATE --device $DEVICE --output-dir $OUTPUT_DIR"
+CMD="python3 -m utils.main --model $MODEL --batch-size $BATCH_SIZE --epochs $EPOCHS --lr $LEARNING_RATE --device $DEVICE --output-dir $OUTPUT_DIR"
 
 # Add quick test flag if enabled
 if [ "$QUICK_TEST" = true ]; then

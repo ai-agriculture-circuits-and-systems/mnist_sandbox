@@ -12,14 +12,21 @@ This project implements a comprehensive deep learning framework for training and
 │   ├── base_model.py    # Base model class
 │   ├── model_factory.py # Model factory for easy instantiation
 │   └── logger.py        # Logging utilities
-├── utils/               # Utility classes
+├── utils/               # Training code and utilities
+│   ├── main.py          # Main training entry point
+│   ├── regression.py    # NAS-style regression across all models
 │   ├── data_loader.py   # Data loading utilities
 │   ├── trainer.py       # Training utilities
 │   └── evaluator.py     # Evaluation utilities
-├── main.py              # Main training script
-├── run.sh               # Shell wrapper for single-model runs
-├── regression.py        # NAS-style regression across all models
-├── regression.sh        # Shell wrapper for regression suite
+├── scripts/             # Shell wrappers and git submodule helpers
+│   ├── run.sh           # Single-model training wrapper
+│   ├── regression.sh    # Regression suite wrapper
+│   ├── test.sh          # Smoke-test all registered models
+│   ├── init_submodules.sh
+│   ├── add_submodule.sh
+│   ├── remove_submodule.sh
+│   └── update_submodules.sh
+├── outputs/             # Checkpoints, logs, regression artifacts
 ├── requirements.txt     # Project dependencies
 └── README.md            # This file
 ```
@@ -136,26 +143,26 @@ pip install --no-index --find-links=wheels -r requirements.txt
 
 ## Usage
 
-Train a single model:
+Train a single model (run from the project root):
 
 ```bash
-./run.sh -m resnet --epochs 10
-./run.sh -m vit --quick-test
-python main.py --model densenet --epochs 5
+./scripts/run.sh -m resnet --epochs 10
+./scripts/run.sh -m vit --quick-test
+python -m utils.main --model densenet --epochs 5
 ```
 
 Run the full regression suite (all 58 models, loss × optimizer × NAS trials):
 
 ```bash
-./regression.sh -q              # quick-test subset, parallel workers
-./regression.sh -m resnet,deit -q # subset of models
-./regression.sh -f              # full MNIST (long)
+./scripts/regression.sh -q              # quick-test subset, parallel workers
+./scripts/regression.sh -m resnet,deit -q # subset of models
+./scripts/regression.sh -f              # full MNIST (long)
 ```
 
 Smoke-test every registered model:
 
 ```bash
-./test.sh
+./scripts/test.sh
 ```
 
 Each training run will:
@@ -171,7 +178,7 @@ To add a new model:
 1. Create a new file in `models/architectures/`
 2. Implement your model class inheriting from `BaseModel`
 3. Add the class to `MODEL_REGISTRY` in `models/model_factory.py`
-4. Add default kwargs in `regression.py` → `build_model_kwargs()` if needed
+4. Add default kwargs in `utils/regression.py` → `build_model_kwargs()` if needed
 5. If the model expects 224×224 input, add its CLI name to `LARGE_IMAGE_MODELS` in `model_factory.py`
 
 `CLASSIFICATION_MODELS`, `AUTOENCODER_MODELS`, and `GAN_MODELS` are derived from the registry automatically.

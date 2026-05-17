@@ -23,20 +23,20 @@ class EntryFlow(nn.Module):
         self.conv1 = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=False)
         )
         
         self.conv2 = nn.Sequential(
             nn.Conv2d(32, 64, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=False)
         )
         
         self.block1 = nn.Sequential(
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             SeparableConv2d(64, 128, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             SeparableConv2d(128, 128, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(128),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -48,10 +48,10 @@ class EntryFlow(nn.Module):
         )
         
         self.block2 = nn.Sequential(
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             SeparableConv2d(128, 256, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             SeparableConv2d(256, 256, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(256),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -63,10 +63,10 @@ class EntryFlow(nn.Module):
         )
         
         self.block3 = nn.Sequential(
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             SeparableConv2d(256, 728, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(728),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             SeparableConv2d(728, 728, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(728),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -101,16 +101,17 @@ class MiddleFlow(nn.Module):
         super().__init__()
         self.blocks = nn.ModuleList([
             nn.Sequential(
-                nn.ReLU(inplace=True),
+                nn.ReLU(inplace=False),
                 SeparableConv2d(728, 728, kernel_size=3, padding=1, bias=False),
                 nn.BatchNorm2d(728),
-                nn.ReLU(inplace=True),
+                nn.ReLU(inplace=False),
                 SeparableConv2d(728, 728, kernel_size=3, padding=1, bias=False),
                 nn.BatchNorm2d(728),
-                nn.ReLU(inplace=True),
+                nn.ReLU(inplace=False),
                 SeparableConv2d(728, 728, kernel_size=3, padding=1, bias=False),
-                nn.BatchNorm2d(728)
-            ) for _ in range(num_blocks)
+                nn.BatchNorm2d(728),
+            )
+            for _ in range(num_blocks)
         ])
 
     def forward(self, x):
@@ -123,10 +124,10 @@ class ExitFlow(nn.Module):
     def __init__(self):
         super().__init__()
         self.block1 = nn.Sequential(
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             SeparableConv2d(728, 728, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(728),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             SeparableConv2d(728, 1024, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(1024),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -138,13 +139,13 @@ class ExitFlow(nn.Module):
         )
         
         self.block2 = nn.Sequential(
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             SeparableConv2d(1024, 1536, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(1536),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             SeparableConv2d(1536, 2048, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(2048),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=False)
         )
 
     def forward(self, x):
@@ -156,11 +157,11 @@ class ExitFlow(nn.Module):
 
 class Xception(BaseModel):
     """Xception model for MNIST classification."""
-    def __init__(self, num_classes=10):
+    def __init__(self, num_classes: int = 10, num_blocks: int = 8):
         super().__init__()
         
         self.entry_flow = EntryFlow()
-        self.middle_flow = MiddleFlow()
+        self.middle_flow = MiddleFlow(num_blocks=num_blocks)
         self.exit_flow = ExitFlow()
         
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))

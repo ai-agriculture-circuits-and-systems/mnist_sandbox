@@ -8,6 +8,7 @@ import json
 import multiprocessing as mp
 import os
 import random
+import shutil
 import sys
 import time
 import traceback
@@ -287,7 +288,7 @@ def build_model_kwargs(model_name: str, image_size: int) -> dict[str, Any]:
     if model_name == "mobilenet":
         return {"width_multiplier": 1.0}
     if model_name == "mlp":
-        return {"hidden_sizes": [512, 256, 128]}
+        return {"hidden_sizes": [512, 256, 128], "input_size": image_size}
     if model_name == "vit":
         return {
             "img_size": image_size,
@@ -300,7 +301,7 @@ def build_model_kwargs(model_name: str, image_size: int) -> dict[str, Any]:
             "attn_drop_rate": 0.0,
         }
     if model_name == "xception":
-        return {"middle_blocks": 8}
+        return {"num_blocks": 8}
     if model_name == "efficientnet":
         return {"width_mult": 1.0, "depth_mult": 1.0, "dropout_rate": 0.2, "reduction": 4}
     if model_name == "squeezenet":
@@ -386,7 +387,7 @@ def build_model_kwargs(model_name: str, image_size: int) -> dict[str, Any]:
             "drop_rate": 0.0,
         }
     if model_name == "coatnet":
-        return {"img_size": image_size, "dims": [64, 128, 256, 512], "depths": [2, 2, 4, 2]}
+        return {"img_size": image_size, "dims": [32, 64, 128, 256], "depths": [2, 2, 4, 2]}
     if model_name == "vim_tiny":
         return {"img_size": image_size, "embed_dim": 128, "depths": [2, 4, 6, 2]}
     if model_name == "bert":
@@ -410,7 +411,12 @@ def build_model_kwargs(model_name: str, image_size: int) -> dict[str, Any]:
     if model_name in ("lstm", "gru"):
         return {"hidden_size": 128, "num_layers": 2, "dropout": 0.2, "bidirectional": False}
     if model_name == "vanilla_gan":
-        return {"latent_dim": 100, "generator_hidden": 256, "discriminator_hidden": 256}
+        return {
+            "latent_dim": 100,
+            "generator_hidden": 256,
+            "discriminator_hidden": 256,
+            "image_size": image_size,
+        }
     if model_name in ("dcgan", "wgan", "cgan"):
         return {"latent_dim": 100, "generator_channels": 64, "discriminator_channels": 64}
     if model_name == "simple_ae":
@@ -550,6 +556,7 @@ def search_best_config(
     loader_workers: int = 4,
 ) -> TrialResult:
     best: Optional[TrialResult] = None
+    last_error = ""
     higher_is_better = model_category(model_name) == "classifier"
 
     for _ in range(config.nas_trials):
@@ -614,6 +621,8 @@ def search_best_config(
                 traceback.print_exc()
 
         if result.status == "failed":
+            if result.error:
+                last_error = result.error
             continue
         if best is None:
             best = result
@@ -637,7 +646,7 @@ def search_best_config(
             epochs_run=0,
             epochs_to_convergence=0,
             status="failed",
-            error="All trials failed",
+            error=last_error or "All trials failed",
         )
     return best
 
@@ -854,6 +863,8 @@ def main() -> int:
     os.makedirs(config.output_dir, exist_ok=True)
     partial_dir = os.path.join(config.output_dir, "partials")
     if config.workers > 1:
+        if os.path.isdir(partial_dir):
+            shutil.rmtree(partial_dir)
         os.makedirs(partial_dir, exist_ok=True)
 
     mode = "parallel" if config.workers > 1 else "sequential"
