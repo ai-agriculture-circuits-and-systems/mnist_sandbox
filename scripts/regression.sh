@@ -119,8 +119,8 @@ validate_dataset() {
                 exit 1
             fi
             for cls in early-turning green late-turning red turning white; do
-                if [ ! -f "$STRAW_ROOT/$cls/color/sets/train.txt" ]; then
-                    echo -e "${RED}Missing split file: $STRAW_ROOT/$cls/color/sets/train.txt${NC}"
+                if [ ! -f "$STRAW_ROOT/$cls/sets/train.txt" ]; then
+                    echo -e "${RED}Missing split file: $STRAW_ROOT/$cls/sets/train.txt${NC}"
                     exit 1
                 fi
             done

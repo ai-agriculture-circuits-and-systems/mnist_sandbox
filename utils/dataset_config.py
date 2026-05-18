@@ -86,6 +86,9 @@ STRAWBERRY_CLASSES = [
     "white",
 ]
 
+# Flat layout: strawberries/<class>/{images,sets} (no color/ variant subfolder).
+STRAWBERRY_CLASS_LAYOUT = {name: "" for name in STRAWBERRY_CLASSES}
+
 DATASETS: Dict[str, DatasetSpec] = {
     "mnist": DatasetSpec(
         name="mnist",
@@ -108,6 +111,7 @@ DATASETS: Dict[str, DatasetSpec] = {
         test_source="pv_style",
         quick_train_path="data/test_data/strawberry_quick_train",
         quick_test_path="data/test_data/strawberry_quick_test",
+        class_layout=dict(STRAWBERRY_CLASS_LAYOUT),
     ),
     "plant_village_raspberry": DatasetSpec(
         name="plant_village_raspberry",
