@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List
 
+from models.model_factory import LARGE_IMAGE_MODELS
+
 
 @dataclass(frozen=True)
 class DatasetSpec:
@@ -89,6 +91,11 @@ STRAWBERRY_CLASSES = [
 # Flat layout: strawberries/<class>/{images,sets} (no color/ variant subfolder).
 STRAWBERRY_CLASS_LAYOUT = {name: "" for name in STRAWBERRY_CLASSES}
 
+PISTACHIO_CLASSES = [
+    "kirmizi",
+    "siirt",
+]
+
 DATASETS: Dict[str, DatasetSpec] = {
     "mnist": DatasetSpec(
         name="mnist",
@@ -135,6 +142,17 @@ DATASETS: Dict[str, DatasetSpec] = {
         test_source="pv_style",
         class_layout=dict(ORANGE_CLASS_LAYOUT),
     ),
+    "pistachio": DatasetSpec(
+        name="pistachio",
+        num_classes=len(PISTACHIO_CLASSES),
+        class_names=list(PISTACHIO_CLASSES),
+        data_root=Path("data/Pistachio/pistachios"),
+        default_image_size=224,
+        channels=1,
+        train_source="pv_style",
+        test_source="pv_style",
+        class_layout={name: "" for name in PISTACHIO_CLASSES},
+    ),
 }
 
 # Short aliases map to canonical registry keys (for backward compatibility).
@@ -148,6 +166,13 @@ def resolve_dataset_key(name: str) -> str:
     """Normalize a CLI dataset name to a canonical registry key."""
     key = name.lower().strip().replace("-", "_")
     return DATASET_ALIASES.get(key, key)
+
+
+def get_image_size(model_name: str, dataset_spec: DatasetSpec) -> int:
+    """Resolve input spatial size for a model on a given dataset."""
+    if dataset_spec.name != "mnist":
+        return dataset_spec.default_image_size
+    return 224 if model_name in LARGE_IMAGE_MODELS else 28
 
 
 def get_dataset_spec(name: str, data_root: str | None = None) -> DatasetSpec:

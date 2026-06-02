@@ -21,6 +21,8 @@
 *.json
 *.weights
 *.pt
+*.pth
+outputs/
 data/processed
 data/raw
 

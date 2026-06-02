@@ -24,12 +24,11 @@ from models.model_factory import (
     AUTOENCODER_MODELS,
     CLASSIFICATION_MODELS,
     GAN_MODELS,
-    LARGE_IMAGE_MODELS,
     ModelFactory,
 )
 from utils.autoencoder_trainer import AutoencoderEvaluator, AutoencoderTrainer
 from utils.data_loader import DataLoaderFactory
-from utils.dataset_config import DatasetSpec, get_dataset_spec
+from utils.dataset_config import DatasetSpec, get_dataset_spec, get_image_size
 from utils.early_stopping import EarlyStopping
 from utils.evaluator import Evaluator
 from utils.gantrainer import GANTrainer
@@ -82,6 +81,7 @@ class TrialResult:
     test_loss: float
     epochs_run: int
     epochs_to_convergence: int
+    macro_f1: float = 0.0
     status: str = "ok"
     error: str = ""
 
@@ -142,7 +142,8 @@ def parse_args() -> RegressionConfig:
         "--dataset",
         type=str,
         default="mnist",
-        help="Dataset: mnist | strawberry | plant_village_raspberry | plant_village_orange",
+        help="Dataset: mnist | strawberry | plant_village_raspberry | plant_village_orange "
+        "| pistachio",
     )
     parser.add_argument(
         "--data-root",
@@ -331,12 +332,6 @@ def sample_hyperparameters(
 def resolve_dataset_spec(config: RegressionConfig) -> DatasetSpec:
     """Build dataset spec from regression config."""
     return get_dataset_spec(config.dataset, config.data_root or None)
-
-
-def get_image_size(model_name: str, dataset_spec: DatasetSpec) -> int:
-    if dataset_spec.name != "mnist":
-        return dataset_spec.default_image_size
-    return 224 if model_name in LARGE_IMAGE_MODELS else 28
 
 
 def build_model_kwargs(model_name: str, image_size: int) -> dict[str, Any]:
@@ -608,20 +603,28 @@ def run_trial(
         last_test_loss = 0.0
         epochs_run = 0
         monitor = 0.0
+        best_macro_f1 = 0.0
 
         for epoch in range(config.max_epochs):
             epochs_run = epoch + 1
+            epoch_macro_f1 = 0.0
             if cat == "gan":
                 g_loss, d_loss = trainer.train_epoch(train_loader)
                 last_train_loss = g_loss
                 last_test_loss = d_loss
                 monitor = g_loss
+            elif cat == "classifier":
+                last_train_loss, _ = trainer.train_epoch(train_loader)
+                last_test_loss, monitor, epoch_macro_f1, _, _ = evaluator.evaluate(test_loader)
             else:
                 last_train_loss, _ = trainer.train_epoch(train_loader)
                 last_test_loss, monitor, _, _ = evaluator.evaluate(test_loader)
 
+            prev_best_epoch = early.best_epoch
             if early.step(monitor, epoch + 1):
                 break
+            if cat == "classifier" and early.best_epoch != prev_best_epoch:
+                best_macro_f1 = epoch_macro_f1
 
         final_metric = early.best_metric if early.best_metric is not None else monitor
 
@@ -636,6 +639,7 @@ def run_trial(
             test_loss=last_test_loss,
             epochs_run=epochs_run,
             epochs_to_convergence=early.best_epoch if early.best_epoch > 0 else epochs_run,
+            macro_f1=best_macro_f1 if cat == "classifier" else 0.0,
         )
     finally:
         if model is not None:
@@ -824,6 +828,7 @@ def _trial_row_classifier(rank: int, result: TrialResult) -> List[str]:
         result.optimizer,
         format_hyperparameters(result.hyperparameters),
         format_metric(result.metric_value, precision=2),
+        format_metric(result.macro_f1, precision=2),
         format_metric(result.test_loss),
         str(result.epochs_run),
         str(result.epochs_to_convergence),
@@ -890,9 +895,14 @@ def run_models_subset(
                 )
                 results.append(result)
                 if result.status == "ok":
+                    extra = (
+                        f", macro_f1={result.macro_f1:.2f}%"
+                        if model_category(result.model) == "classifier"
+                        else ""
+                    )
                     print(
                         f"[worker {worker_id}]     -> {result.metric_name}="
-                        f"{result.metric_value:.4f}",
+                        f"{result.metric_value:.4f}{extra}",
                         flush=True,
                     )
                 else:
@@ -1015,6 +1025,7 @@ def generate_report(results: List[TrialResult], config: RegressionConfig, elapse
                 "Optimizer",
                 "Hyperparameters",
                 "Test Acc (%)",
+                "Macro-F1 (%)",
                 "Test Loss",
                 "Epochs Run",
                 "Convergence Epoch",
@@ -1032,6 +1043,7 @@ def generate_report(results: List[TrialResult], config: RegressionConfig, elapse
                 "Optimizer",
                 "Hyperparameters",
                 "Test Acc (%)",
+                "Macro-F1 (%)",
                 "Test Loss",
                 "Epochs Run",
                 "Convergence Epoch",

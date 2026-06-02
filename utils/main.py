@@ -3,6 +3,7 @@ import os
 import argparse
 from models.model_factory import ModelFactory
 from utils.data_loader import DataLoaderFactory
+from utils.dataset_config import get_dataset_spec, get_image_size
 from utils.trainer import Trainer
 from utils.evaluator import Evaluator
 from utils.gantrainer import GANTrainer
@@ -19,18 +20,35 @@ def parse_args():
                         help='Model architecture to use (default: alexnet)')
     
     # Dataset parameters
+    parser.add_argument(
+        '--dataset',
+        type=str,
+        default='mnist',
+        help='Dataset: mnist | strawberry | plant_village_raspberry | plant_village_orange '
+        '| pistachio (aliases: raspberry, orange)',
+    )
+    parser.add_argument(
+        '--data-root',
+        type=str,
+        default='',
+        help='Override dataset root (see utils/dataset_config.py)',
+    )
     parser.add_argument('--train-path', type=str, default='data/MNISTtrain.mat',
-                        help='Path to training data (default: data/MNISTtrain.mat)')
+                        help='MNIST training .mat path (mnist dataset only)')
     parser.add_argument('--test-path', type=str, default='data/MNISTtest.mat',
-                        help='Path to test data (default: data/MNISTtest.mat)')
+                        help='MNIST test .mat path (mnist dataset only)')
     parser.add_argument('--batch-size', type=int, default=32,
                         help='Batch size for training (default: 32)')
     parser.add_argument('--num-workers', type=int, default=4,
                         help='Number of workers for data loading (default: 4)')
     parser.add_argument('--quick-test', action='store_true',
                         help='Use small test dataset (100 images) for quick testing')
-    parser.add_argument('--image-size', type=int, default=224,
-                        help='Size to resize images to (default: 224)')
+    parser.add_argument(
+        '--image-size',
+        type=int,
+        default=0,
+        help='Resize override (0 = auto from dataset and model; default: 0)',
+    )
     
     # Training parameters
     parser.add_argument('--epochs', type=int, default=10,
@@ -269,34 +287,55 @@ def main():
     
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
-    
-    # Set appropriate image size based on model type
-    if args.model in ['simple_ae', 'conv_ae', 'vae', 'denoising_ae', 'vanilla_gan', 'dcgan', 'wgan', 'cgan', 'bert', 'gpt']:
-        args.image_size = 28  # Use original MNIST size for these models
-    else:
-        args.image_size = 224  # Default size for CNN models
-    
-    # Initialize data loaders
-    if args.quick_test:
-        print("Using quick test dataset (100 images)")
-        train_loader, test_loader = DataLoaderFactory.get_data_loaders(
-            train_path='data/test_data/test_images.npy',
-            test_path='data/test_data/test_images.npy',  # Use same file for both train and test in quick test mode
-            batch_size=min(args.batch_size, 32),  # Limit batch size for small dataset
-            num_workers=min(args.num_workers, 2),  # Limit workers for small dataset
-            image_size=args.image_size
+
+    dataset_spec = get_dataset_spec(args.dataset, args.data_root or None)
+    if not args.quick_test:
+        dataset_spec.validate()
+    elif dataset_spec.train_source == "pv_style":
+        dataset_spec.validate()
+    elif (
+        dataset_spec.name == "mnist"
+        and not os.path.isfile(dataset_spec.quick_train_path)
+    ):
+        print(
+            "Quick-test MNIST subset missing; run: python3 utils/create_test_data.py"
         )
-    else:
+
+    image_size = (
+        args.image_size
+        if args.image_size > 0
+        else get_image_size(args.model, dataset_spec)
+    )
+    class_names = list(dataset_spec.class_names)
+    num_classes = dataset_spec.num_classes
+
+    print(
+        f"Dataset: {dataset_spec.name} ({num_classes} classes: "
+        f"{', '.join(class_names)})"
+    )
+
+    batch_size = min(args.batch_size, 32) if args.quick_test else args.batch_size
+    num_workers = min(args.num_workers, 2) if args.quick_test else args.num_workers
+
+    if dataset_spec.name == "mnist" and not args.quick_test:
         train_loader, test_loader = DataLoaderFactory.get_data_loaders(
             train_path=args.train_path,
             test_path=args.test_path,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            image_size=args.image_size
+            batch_size=batch_size,
+            num_workers=num_workers,
+            image_size=image_size,
+            channels=dataset_spec.channels,
         )
-    
-    # Define MNIST class names
-    class_names = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+    else:
+        if args.quick_test:
+            print("Using quick-test data subset")
+        train_loader, test_loader = DataLoaderFactory.get_loaders_for_dataset(
+            spec=dataset_spec,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            image_size=image_size,
+            quick_test=args.quick_test,
+        )
     
     # Prepare model-specific parameters
     model_kwargs = {}
@@ -427,7 +466,9 @@ def main():
     
     # Initialize model
     try:
-        model = ModelFactory.create_model(args.model, num_classes=10, **model_kwargs)
+        model = ModelFactory.create_model(
+            args.model, num_classes=num_classes, **model_kwargs
+        )
         # Move model to device before any operations
         model = model.to(device)
         print(f"Created model: {args.model}")
@@ -494,8 +535,13 @@ def main():
             
             # Evaluate
             if evaluator is not None:
-                test_loss, test_acc, all_preds, all_targets = evaluator.evaluate(test_loader)
-                print(f"Test Loss: {test_loss:.4f}, Accuracy: {test_acc:.2f}%")
+                test_loss, test_acc, macro_f1, all_preds, all_targets = evaluator.evaluate(
+                    test_loader
+                )
+                print(
+                    f"Test Loss: {test_loss:.4f}, Accuracy: {test_acc:.2f}%, "
+                    f"Macro-F1: {macro_f1:.2f}%"
+                )
 
                 if early_stopper and early_stopper.step(test_acc, epoch + 1):
                     print(

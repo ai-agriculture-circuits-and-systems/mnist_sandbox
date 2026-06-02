@@ -65,15 +65,24 @@ class MNISTDataset(Dataset):
     def __len__(self):
         return len(self.images)
 
+    @staticmethod
+    def _to_pil(image: np.ndarray) -> Image.Image:
+        """Convert a grayscale MNIST array to PIL for torchvision transforms."""
+        if image.max() <= 1.0:
+            pixels = (image * 255).astype(np.uint8)
+        else:
+            pixels = image.astype(np.uint8)
+        return Image.fromarray(pixels)
+
     def __getitem__(self, idx):
         image = self.images[idx]
         label = self.labels[idx]
 
         if self.transform:
-            # Apply transform and ensure we get a tensor with shape [channels, height, width]
+            if isinstance(image, np.ndarray):
+                image = self._to_pil(image)
             image = self.transform(image)
         else:
-            # If no transform, convert to tensor with shape [channels, height, width]
             image = torch.FloatTensor(image).unsqueeze(0)
 
         return image, torch.LongTensor([label])[0]
