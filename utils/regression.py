@@ -143,7 +143,7 @@ def parse_args() -> RegressionConfig:
         type=str,
         default="mnist",
         help="Dataset: mnist | strawberry | plant_village_raspberry | plant_village_orange "
-        "| pistachio",
+        "| pistachio | acfr_multifruit",
     )
     parser.add_argument(
         "--data-root",

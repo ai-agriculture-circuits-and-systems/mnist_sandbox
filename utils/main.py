@@ -25,7 +25,7 @@ def parse_args():
         type=str,
         default='mnist',
         help='Dataset: mnist | strawberry | plant_village_raspberry | plant_village_orange '
-        '| pistachio (aliases: raspberry, orange)',
+        '| pistachio | acfr_multifruit (aliases: raspberry, orange, acfr)',
     )
     parser.add_argument(
         '--data-root',

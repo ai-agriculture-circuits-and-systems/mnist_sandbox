@@ -96,6 +96,12 @@ PISTACHIO_CLASSES = [
     "siirt",
 ]
 
+ACFR_MULTIFRUIT_CLASSES = [
+    "almond",
+    "apple",
+    "mangoe",
+]
+
 DATASETS: Dict[str, DatasetSpec] = {
     "mnist": DatasetSpec(
         name="mnist",
@@ -153,12 +159,24 @@ DATASETS: Dict[str, DatasetSpec] = {
         test_source="pv_style",
         class_layout={name: "" for name in PISTACHIO_CLASSES},
     ),
+    "acfr_multifruit": DatasetSpec(
+        name="acfr_multifruit",
+        num_classes=len(ACFR_MULTIFRUIT_CLASSES),
+        class_names=list(ACFR_MULTIFRUIT_CLASSES),
+        data_root=Path("data/ACFR_Multifruit_Classification/acfr_multifruit"),
+        default_image_size=224,
+        channels=1,
+        train_source="pv_style",
+        test_source="pv_style",
+        class_layout={name: "" for name in ACFR_MULTIFRUIT_CLASSES},
+    ),
 }
 
 # Short aliases map to canonical registry keys (for backward compatibility).
 DATASET_ALIASES: Dict[str, str] = {
     "raspberry": "plant_village_raspberry",
     "orange": "plant_village_orange",
+    "acfr": "acfr_multifruit",
 }
 
 
