@@ -51,7 +51,7 @@ show_help() {
     echo "  -q, --quick-test        Use 100-image subset (default: on)"
     echo "  -f, --full              Full dataset (disables quick-test)"
     echo "  --dataset NAME          mnist | strawberry | plant_village_raspberry | plant_village_orange"
-    echo "                          | pistachio | acfr_multifruit (aliases: raspberry, orange, acfr)"
+    echo "                          | pistachio | acfr_multifruit | fruits (aliases: raspberry, orange, acfr)"
     echo "  --data-root DIR         Override dataset root (see utils/dataset_config.py)"
     echo "  -e, --max-epochs N      Max epochs per trial (default: 200)"
     echo "  -p, --patience N        Early-stop patience (default: 5)"
@@ -73,6 +73,7 @@ show_help() {
     echo "  $0 --dataset plant_village_raspberry -q -m resnet,lenet"
     echo "  $0 --dataset plant_village_orange -q -m resnet,lenet"
     echo "  $0 --dataset pistachio -q -m resnet,lenet"
+    echo "  $0 --dataset fruits -q -m resnet,lenet"
     echo "  $0 -m alexnet,simple_cnn,mlp -q    # subset of models, quick"
     echo "  $0 -q                              # quick-test with 8 workers (default)"
     echo "  $0 -j 1 -q                         # sequential quick-test"
@@ -166,7 +167,7 @@ spec.validate()
 print(f'OK: {spec.name} ({spec.num_classes} classes) at {spec.data_root}')
 " 2>&1; then
                 echo -e "${RED}Unknown or invalid dataset: $DATASET${NC}"
-                echo "  Use: mnist, strawberry, plant_village_raspberry, plant_village_orange, pistachio, acfr_multifruit"
+                echo "  Use: mnist, strawberry, plant_village_raspberry, plant_village_orange, pistachio, acfr_multifruit, fruits"
                 exit 1
             fi
             ;;

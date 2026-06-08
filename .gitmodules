@@ -13,3 +13,6 @@
 [submodule "data/acfr-multifruit-2016"]
 	path = data/acfr-multifruit-2016
 	url = git@github.com:ai-agriculture-circuits-and-systems/acfr-multifruit-2016.git
+[submodule "data/fruits"]
+	path = data/fruits
+	url = git@github.com:ai-agriculture-circuits-and-systems/fruits.git

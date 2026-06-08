@@ -102,6 +102,16 @@ ACFR_MULTIFRUIT_CLASSES = [
     "mangoe",
 ]
 
+FRUITS_CLASSES = [
+    "apple",
+    "banana",
+    "grape",
+    "orange",
+    "pear",
+]
+
+FRUITS_CLASS_LAYOUT = {name: "color" for name in FRUITS_CLASSES}
+
 DATASETS: Dict[str, DatasetSpec] = {
     "mnist": DatasetSpec(
         name="mnist",
@@ -169,6 +179,17 @@ DATASETS: Dict[str, DatasetSpec] = {
         train_source="pv_style",
         test_source="pv_style",
         class_layout={name: "" for name in ACFR_MULTIFRUIT_CLASSES},
+    ),
+    "fruits": DatasetSpec(
+        name="fruits",
+        num_classes=len(FRUITS_CLASSES),
+        class_names=list(FRUITS_CLASSES),
+        data_root=Path("data/fruits/fruits"),
+        default_image_size=224,
+        channels=1,
+        train_source="pv_style",
+        test_source="pv_style",
+        class_layout=dict(FRUITS_CLASS_LAYOUT),
     ),
 }
 

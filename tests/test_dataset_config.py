@@ -72,6 +72,15 @@ def test_acfr_alias_resolves_to_acfr_multifruit() -> None:
     assert get_dataset_spec("acfr").name == "acfr_multifruit"
 
 
+def test_fruits_spec_has_five_classes() -> None:
+    """Fruits dataset exposes five standardized fruit categories."""
+    spec = get_dataset_spec("fruits")
+    assert spec.num_classes == 5
+    assert spec.class_names == ["apple", "banana", "grape", "orange", "pear"]
+    assert spec.data_root == Path("data/fruits/fruits")
+    assert spec.class_layout["apple"] == "color"
+
+
 def test_unknown_dataset_raises() -> None:
     """Invalid dataset names are rejected."""
     with pytest.raises(ValueError, match="Unknown dataset"):
@@ -151,6 +160,24 @@ def test_plant_village_raspberry_loader_reads_images() -> None:
 def test_pistachio_loader_reads_images() -> None:
     """Pistachio loads kirmizi and siirt cultivar splits."""
     spec = get_dataset_spec("pistachio")
+    spec.validate()
+    train_loader, test_loader = DataLoaderFactory.get_pv_style_loaders(
+        spec, batch_size=2, num_workers=0, quick_test=True, quick_max_samples=20
+    )
+    assert len(train_loader.dataset) > 0
+    assert len(test_loader.dataset) > 0
+    images, labels = next(iter(train_loader))
+    assert images.shape[1] == 1
+    assert labels.max().item() < spec.num_classes
+
+
+@pytest.mark.skipif(
+    not Path("data/fruits/fruits/apple/color/sets/train.txt").is_file(),
+    reason="Fruits data not present",
+)
+def test_fruits_loader_reads_images() -> None:
+    """Fruits loads PV-style color/ subfolders for all five classes."""
+    spec = get_dataset_spec("fruits")
     spec.validate()
     train_loader, test_loader = DataLoaderFactory.get_pv_style_loaders(
         spec, batch_size=2, num_workers=0, quick_test=True, quick_max_samples=20
